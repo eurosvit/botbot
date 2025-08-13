@@ -1,126 +1,76 @@
 import os, json, logging
 from decimal import Decimal
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
 from .logging_conf import configure_logging
-from .scheduler import create_scheduler
-from .telegram import Telegram
-from .db import init_db, get_session
-from .reporting_ecom import build_daily_message
+from .db import migrate, get_session
+from .reporting_ecom import aggregate_finance
 from datetime import date
-
-load_dotenv()
-configure_logging()
-
-app = Flask(__name__)
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-me")
-
-# Init DB & scheduler (можна не користуватись, якщо є Render Cron)
-try:
-    init_db()
-except Exception:
-    logging.exception("db_init_failed")
-
-_sched = create_scheduler(app)
-_sched.start()
+load_dotenv(); configure_logging()
+app=Flask(__name__); app.config["SECRET_KEY"]=os.getenv("SECRET_KEY","change-me")
+try: migrate()
+except Exception: logging.exception("migrate_fail")
 
 @app.get("/healthz")
-def healthz():
-    return jsonify({"status": "ok"})
+def healthz(): return jsonify({"ok":True})
 
 @app.post("/webhook/salesdrive")
 def webhook_salesdrive():
-    payload = request.get_json(silent=True) or {}
+    p=request.get_json(silent=True) or {}
     try:
-        sess = get_session()
-        sess.execute("INSERT INTO salesdrive_events (payload) VALUES (:p)", {"p": json.dumps(payload)})
-        def guess_brand(it, order):
-            for kk in ("brand","Brand","vendor","manufacturer"):
-                v = (it or {}).get(kk) or (order or {}).get(kk)
-                if v: return str(v)
-            title = ((it or {}).get("title") or "").lower()
-            if "znana" in title: return "Znana"
-            if "plate" in title or "healthy" in title: return "HealthyPlate"
-            if "pecs" in title: return "PECS"
-            return "Mamulya"
-        def get_campaign(p):
-            for chain in (("utm_campaign",),("order","utm_campaign"),("data","utm_campaign")):
-                node=p; ok=True
-                for k in chain:
-                    node = node.get(k) if isinstance(node, dict) else None
-                    if node is None: ok=False; break
-                if ok and node: return str(node)
-            return "unknown"
-        def iter_items(p):
-            for chain in (("order","items"),("data","items"),("items",)):
-                node=p; ok=True
-                for k in chain:
-                    node = node.get(k) if isinstance(node, dict) else None
-                    if node is None: ok=False; break
-                if ok and isinstance(node,list): return node, (p.get("order") or p.get("data") or {})
-            return None, {}
-        items, order_info = iter_items(payload)
-        campaign = get_campaign(payload)
-        wrote=False
-        if items:
-            for it in items:
-                qty = Decimal(str(it.get("quantity", it.get("qty",1) or 1)))
-                val = None
-                for k in ("price_uah","priceUAH","price","unit_price","unitPrice"):
-                    if it.get(k) is not None: val = Decimal(str(it[k]))*qty; break
-                if val is None:
-                    for k in ("subtotal_uah","subtotal","amount","line_total"):
-                        if it.get(k) is not None: val = Decimal(str(it[k])); break
-                if not val: continue
-                brand = guess_brand(it, order_info)
-                sess.execute(
-                    "INSERT INTO orders (order_id, amount_uah, brand, utm_campaign) VALUES (:oid,:amt,:br,:cmp)",
-                    {"oid": str(payload.get("id") or payload.get("order_id") or ""), "amt": val, "br": brand, "cmp": campaign}
-                )
-                wrote=True
-        if not wrote:
-            amt = None
-            for k in ("total_uah","amount_uah","grand_total_uah","total","amount","grand_total"):
-                if payload.get(k) is not None: amt = Decimal(str(payload[k])); break
-            if amt:
-                brand = guess_brand({}, payload.get("order") or payload.get("data") or {})
-                sess.execute(
-                    "INSERT INTO orders (order_id, amount_uah, brand, utm_campaign) VALUES (:oid,:amt,:br,:cmp)",
-                    {"oid": str(payload.get("id") or payload.get("order_id") or ""), "amt": amt, "br": brand, "cmp": campaign}
-                )
-        sess.commit()
-        return ("ok", 200)
+        s=get_session()
+        order_id=str(p.get("id") or p.get("order_id") or "")
+        status=str(p.get("status") or p.get("order_status") or p.get("state") or "")
+        shipped_at=p.get("shipped_at") or p.get("delivery_date") or p.get("sent_at")
+        def amount(pp):
+            for path in (("total_uah",),("amount_uah",),("grand_total_uah",),("total",),("amount",),("grand_total",),("order","grand_total"),("order","amount")):
+                n=pp
+                for k in path:
+                    n=n.get(k) if isinstance(n,dict) else None
+                    if n is None: break
+                if n is not None:
+                    try: return Decimal(str(n))
+                    except: pass
+            return None
+        brand=(p.get("brand") or p.get("vendor") or p.get("manufacturer") or "Mamulya")
+        utm=p.get("utm_campaign") or (p.get("order") or {}).get("utm_campaign") or "unknown"
+        amt=amount(p)
+        s.execute("INSERT INTO salesdrive_events(payload) VALUES(:p)",{"p":json.dumps(p)})
+        if amt is not None:
+            if isinstance(shipped_at,(int,float)):
+                s.execute("INSERT INTO orders(order_id,amount_uah,brand,utm_campaign,status,shipped_at) VALUES(:oid,:a,:b,:u,:st,to_timestamp(:ts))",
+                          {"oid":order_id,"a":amt,"b":brand,"u":utm,"st":status,"ts":shipped_at})
+            else:
+                s.execute("INSERT INTO orders(order_id,amount_uah,brand,utm_campaign,status,shipped_at) VALUES(:oid,:a,:b,:u,:st,:ship)",
+                          {"oid":order_id,"a":amt,"b":brand,"u":utm,"st":status,"ship":shipped_at})
+        s.commit(); return ("ok",200)
     except Exception:
-        logging.exception("salesdrive_store_failed")
-        return ("error", 500)
+        logging.exception("webhook_fail"); return ("error",500)
 
 @app.post("/ingest/google-ads")
-def ingest_google_ads():
-    data = request.get_json(silent=True) or {}
-    if not data.get("stat_date") or not data.get("campaign"):
-        return jsonify({"ok": False, "error": "stat_date & campaign required"}), 400
-    cost = Decimal(str(data.get("cost", 0)))  # UAH only
-    sess = get_session()
-    sess.execute(
-        """INSERT INTO ad_stats (stat_date, campaign, cost, currency, clicks, impressions)
-               VALUES (:d,:c,:cost,'UAH',:clk,:imp)
-               ON CONFLICT (stat_date, campaign) DO UPDATE
-               SET cost=EXCLUDED.cost, currency=EXCLUDED.currency, clicks=EXCLUDED.clicks, impressions=EXCLUDED.impressions
-        """,
-        {"d": data["stat_date"], "c": data["campaign"], "cost": cost,
-         "clk": int(data.get("clicks",0)), "imp": int(data.get("impressions",0))}
-    )
-    sess.commit()
-    return jsonify({"ok": True})
-
-@app.get("/trigger/ecom-report")
-def trigger_ecom_report():
-    Telegram().send(build_daily_message(date.today()))
-    return jsonify({"status":"sent"})
+def ingest_ads():
+    d=request.get_json(silent=True) or {}
+    if not d.get("stat_date") or not d.get("campaign"):
+        return jsonify({"ok":False,"error":"stat_date & campaign required"}),400
+    cost=Decimal(str(d.get("cost",0)))
+    s=get_session()
+    s.execute("""INSERT INTO ad_stats(stat_date,campaign,cost,currency,clicks,impressions)
+               VALUES(:d,:c,:cost,'UAH',:clk,:imp)
+               ON CONFLICT(stat_date,campaign) DO UPDATE
+               SET cost=EXCLUDED.cost,currency=EXCLUDED.currency,clicks=EXCLUDED.clicks,impressions=EXCLUDED.impressions
+               """,{"d":d["stat_date"],"c":d["campaign"],"cost":cost,"clk":int(d.get("clicks",0)),"imp":int(d.get("impressions",0))})
+    s.commit(); return jsonify({"ok":True})
 
 @app.get("/report/preview")
-def report_preview():
-    return build_daily_message(date.today())
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+def preview():
+    from datetime import datetime as _dt
+    day=_dt.fromisoformat(request.args.get("date") or str(date.today())).date()
+    f=aggregate_finance(day)
+    shipped=(f['real_sales_count']/f['new_orders_count']*100) if f['new_orders_count'] else 0
+    flag="✅" if shipped>=60 else "⚠️" if shipped>=40 else "🚨"
+    lines=[f"📊 Попередній звіт ({day})",
+           f"Нові: {f['new_orders_count']} | В процесі: {f['processing_orders_count']} на {f['processing_amount']:.0f} UAH",
+           f"Реальні: {f['real_sales_count']} на {f['real_sales_amount']:.0f} UAH (середній {f['real_avg_check']:.0f})",
+           f"Обробка: {shipped:.0f}% {flag} | Реклама {f['ad_cost']:.0f} | Менеджер {f['manager_cost']:.0f}",
+           f"Маржа {float(f['avg_margin'])*100:.2f}% | Валовий {f['gross_profit']:.0f} | Чистий {f['net_profit']:.0f}"]
+    return Response("\n".join(lines), mimetype="text/plain")
