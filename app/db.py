@@ -6,10 +6,18 @@ from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 _engine = None
 _Session = None
 
-def _ensure_ssl(url: str) -> str:
-    # If postgres and no ssl mode, append sslmode=require for Render PG
+def _coerce_psycopg3(url: str) -> str:
+    # Force SQLAlchemy to use psycopg v3 driver
     parsed = urlparse(url)
-    if parsed.scheme.startswith("postgres"):
+    if parsed.scheme in ("postgres", "postgresql"):
+        parsed = parsed._replace(scheme="postgresql+psycopg")
+        return urlunparse(parsed)
+    return url
+
+def _ensure_ssl(url: str) -> str:
+    # Append sslmode=require if missing
+    parsed = urlparse(url)
+    if parsed.scheme.startswith("postgresql+psycopg"):
         q = parse_qs(parsed.query)
         if "sslmode" not in q:
             q["sslmode"] = ["require"]
@@ -24,8 +32,9 @@ def get_engine():
         url = os.getenv("DATABASE_URL")
         if not url:
             raise RuntimeError("DATABASE_URL is not set")
+        url = _coerce_psycopg3(url)
         url = _ensure_ssl(url)
-        logging.info({"event":"db_create_engine"})
+        logging.info({"event":"db_create_engine_psycopg3", "url_scheme": url.split(':',1)[0]})
         _engine = create_engine(url, pool_pre_ping=True, future=True)
         _Session = sessionmaker(bind=_engine, autoflush=False, autocommit=False, future=True)
     return _engine

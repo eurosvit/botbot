@@ -54,5 +54,4 @@ def trigger_report_now():
     return jsonify({"status": "queued"})
 
 if __name__ == "__main__":
-    # Local dev: `python -m app.main`
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8000)))

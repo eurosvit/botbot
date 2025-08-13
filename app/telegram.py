@@ -17,6 +17,6 @@ class Telegram:
             r.raise_for_status()
             logging.info({"event":"telegram_ok","status":r.status_code})
             return True
-        except Exception as e:
+        except Exception:
             logging.exception("telegram_send_failed")
             return False
