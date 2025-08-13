@@ -4,11 +4,12 @@ TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 
 class Telegram:
     def __init__(self, token=None, chat_id=None, timeout=None):
-        self.token = token or os.getenv("TELEGRAM_BOT_TOKEN")
-        self.chat_id = chat_id or os.getenv("TELEGRAM_CHAT_ID")
+        # Пріоритет вашим TG_* змінним; fallback на TELEGRAM_* якщо раптом існують
+        self.token = token or os.getenv("TG_BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+        self.chat_id = chat_id or os.getenv("TG_CHAT_ID") or os.getenv("TELEGRAM_CHAT_ID")
         self.timeout = int(os.getenv("TELEGRAM_TIMEOUT", "15")) if timeout is None else timeout
-        assert self.token, "TELEGRAM_BOT_TOKEN is required"
-        assert self.chat_id, "TELEGRAM_CHAT_ID is required"
+        assert self.token, "TG_BOT_TOKEN (or TELEGRAM_BOT_TOKEN) is required"
+        assert self.chat_id, "TG_CHAT_ID (or TELEGRAM_CHAT_ID) is required"
 
     def send(self, text):
         url = TELEGRAM_API.format(token=self.token, method="sendMessage")
