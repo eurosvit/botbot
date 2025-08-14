@@ -1,3 +1,4 @@
+print("=== START daily_report.py ===")
 from datetime import date, timedelta
 import os
 import json
