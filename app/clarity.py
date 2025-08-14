@@ -2,39 +2,45 @@ import requests
 import os
 import logging
 
-CLARITY_API_URL = "https://clarity.microsoft.com/api/v1"
+CLARITY_API_URL = "https://www.clarity.ms/export-data/api/v1"
 
 logger = logging.getLogger(__name__)
 
-def fetch_clarity_insights():
+def fetch_clarity_insights(num_of_days=1, dimension1=None, dimension2=None, dimension3=None):
     """
-    Отримує всі доступні інсайти з Microsoft Clarity.
+    Отримує інсайти з Microsoft Clarity через Data Export API.
+    
+    :param num_of_days: Кількість днів для експорту даних (1, 2, або 3)
+    :param dimension1: Перша вимірна категорія (наприклад, "OS", "Device")
+    :param dimension2: Друга вимірна категорія (опціонально)
+    :param dimension3: Третя вимірна категорія (опціонально)
+    :return: JSON з даними інсайтів або None у випадку помилки
     """
-    project_id = os.getenv("CLARITY_PROJECT_ID")
     token = os.getenv("CLARITY_TOKEN")
-    if not project_id or not token:
-        logger.error("Clarity credentials are missing: check CLARITY_PROJECT_ID and CLARITY_TOKEN")
+    if not token:
+        logger.error("Clarity API token is missing. Check CLARITY_TOKEN environment variable.")
         return None
 
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    
+    params = {"numOfDays": num_of_days}
+    if dimension1:
+        params["dimension1"] = dimension1
+    if dimension2:
+        params["dimension2"] = dimension2
+    if dimension3:
+        params["dimension3"] = dimension3
+
     try:
-        logger.info("Fetching traffic data from Clarity")
-        traffic_response = requests.get(f"{CLARITY_API_URL}/projects/{project_id}/traffic", headers=headers)
-        traffic_data = traffic_response.json() if traffic_response.status_code == 200 else {}
-
-        logger.info("Fetching click metrics from Clarity")
-        click_response = requests.get(f"{CLARITY_API_URL}/projects/{project_id}/clicks", headers=headers)
-        click_data = click_response.json() if click_response.status_code == 200 else {}
-
-        logger.info("Fetching scroll depth data from Clarity")
-        scroll_response = requests.get(f"{CLARITY_API_URL}/projects/{project_id}/scroll", headers=headers)
-        scroll_data = scroll_response.json() if scroll_response.status_code == 200 else {}
-
-        return {
-            "traffic": traffic_data,
-            "clicks": click_data,
-            "scrolls": scroll_data,
-        }
-    except Exception as e:
-        logger.error(f"Error fetching Clarity data: {e}")
-        return None
+        logger.info(f"Fetching insights from Clarity API for numOfDays={num_of_days}, dimensions={dimension1}, {dimension2}, {dimension3}")
+        response = requests.get(f"{CLARITY_API_URL}/project-live-insights", headers=headers, params=params, timeout=10)
+        response.raise_for_status()  # Raise HTTPError for bad responses (4xx and 5xx)
+        return response.json()
+    except requests.exceptions.Timeout:
+        logger.error("Request to Clarity API timed out.")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request to Clarity API failed: {e}")
+    return None
