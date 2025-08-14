@@ -5,7 +5,7 @@ from flask import Flask, Response, request
 from app.logging_conf import configure_logging
 from app.reporting_ecom import get_daily_ecom_report
 from app.salesdrive_webhook import process_salesdrive_webhook
-from app.clarity import get_clarity_insights
+from app.clarity import fetch_clarity_insights  # Змінено на fetch_clarity_insights
 from app.telegram import send_report_to_telegram
 from app.analyze import generate_actionable_insights
 
@@ -37,7 +37,7 @@ def daily_report():
         logger.debug(f"SalesDrive data: {salesdrive_data}")
 
         logger.info("Getting Clarity insights...")
-        clarity_data = get_clarity_insights()
+        clarity_data = fetch_clarity_insights()  # Змінено на fetch_clarity_insights
         logger.debug(f"Clarity data: {clarity_data}")
 
         logger.info("Generating actionable insights...")
