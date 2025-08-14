@@ -1,5 +1,6 @@
 import os
 import logging
+import socket
 from flask import Flask, Response, request
 from app.logging_conf import configure_logging
 from app.reporting_ecom import get_daily_ecom_report
@@ -72,6 +73,12 @@ def salesdrive_webhook_route():
         logger.exception("Error processing SalesDrive webhook")
         return {"status": "error", "message": str(e)}, 500
 
+def find_free_port():
+    """Find an available port to run the server."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        return s.getsockname()[1]
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", find_free_port()))
     app.run(host="0.0.0.0", port=port)
