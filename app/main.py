@@ -1,6 +1,6 @@
 import os
 import logging
-from flask import Flask, Response
+from flask import Flask, Response, request
 from app.logging_conf import configure_logging
 from app.reporting_ecom import get_daily_ecom_report
 from app.salesdrive_webhook import process_salesdrive_webhook
@@ -57,6 +57,19 @@ def daily_report():
 
     except Exception as e:
         logger.exception("Error in daily_report route")
+        return {"status": "error", "message": str(e)}, 500
+
+@app.route("/webhooks/salesdrive", methods=["POST"])
+def salesdrive_webhook():
+    logger.info("SalesDrive webhook called")
+    try:
+        data = request.get_json(force=True, silent=True)
+        logger.debug(f"Incoming SalesDrive webhook data: {data}")
+        result = process_salesdrive_webhook(data)
+        logger.info("SalesDrive webhook processed successfully")
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        logger.exception("Error processing SalesDrive webhook")
         return {"status": "error", "message": str(e)}, 500
 
 if __name__ == "__main__":
