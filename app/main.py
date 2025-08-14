@@ -5,8 +5,8 @@ from flask import Flask, Response, request
 from app.logging_conf import configure_logging
 from app.reporting_ecom import get_daily_ecom_report
 from app.salesdrive_webhook import process_salesdrive_webhook
-from app.clarity import get_clarity_insights
-from app.telegram import Telegram  # Змінено імпорт на клас Telegram
+from app.clarity import fetch_clarity_insights  # Оновлений імпорт функції fetch_clarity_insights
+from app.telegram import Telegram  # Залишено виправлений імпорт Telegram
 from app.analyze import generate_actionable_insights
 
 app = Flask(__name__)
@@ -37,7 +37,7 @@ def daily_report():
         logger.debug(f"SalesDrive data: {salesdrive_data}")
 
         logger.info("Getting Clarity insights...")
-        clarity_data = get_clarity_insights()
+        clarity_data = fetch_clarity_insights()  # Виклик функції fetch_clarity_insights
         logger.debug(f"Clarity data: {clarity_data}")
 
         logger.info("Generating actionable insights...")
@@ -51,11 +51,9 @@ def daily_report():
 
         report_text = f"{insights}\n\nРекомендації:\n{recommendations}"
 
-        # Ініціалізація Telegram
         logger.info("Initializing Telegram bot...")
         telegram_bot = Telegram()  # Створення екземпляра класу Telegram
 
-        # Надсилання звіту через Telegram
         logger.info("Sending report to Telegram...")
         result = telegram_bot.send(report_text)  # Виклик методу send
         if result:
