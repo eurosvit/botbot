@@ -38,3 +38,9 @@ def fetch_clarity_insights():
     except Exception as e:
         logger.error(f"Error fetching Clarity data: {e}")
         return None
+
+def get_clarity_insights():
+    """
+    Wrapper function for compatibility with main.py imports.
+    """
+    return fetch_clarity_insights()

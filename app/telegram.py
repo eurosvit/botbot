@@ -31,3 +31,15 @@ class Telegram:
             logging.exception("[TG SEND] tg_fail")
             print(f"[TG SEND] FAIL: {e}")
             return False
+
+def send_report_to_telegram(text):
+    """
+    Wrapper function to send report text via Telegram.
+    Uses environment variables for credentials.
+    """
+    try:
+        tg = Telegram()
+        return tg.send(text)
+    except Exception as e:
+        logging.error(f"Failed to send report to Telegram: {e}")
+        return False
