@@ -7,7 +7,7 @@ from app.reporting_ecom import get_daily_ecom_report
 from app.salesdrive_webhook import process_salesdrive_webhook
 from app.clarity import fetch_clarity_insights  # Оновлений імпорт функції fetch_clarity_insights
 from app.telegram import Telegram  # Залишено виправлений імпорт Telegram
-from app.analyze import generate_actionable_insights
+from analyze import generate_actionable_insights  # Виправлено імпорт (з кореневої директорії)
 
 app = Flask(__name__)
 configure_logging()
