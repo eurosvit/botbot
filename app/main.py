@@ -1,17 +1,63 @@
 import os
+import logging
 from flask import Flask, Response
-from app.logging_conf import configure_logging  # абсолютний імпорт!
+from app.logging_conf import configure_logging
+from app.reporting_ecom import get_daily_ecom_report
+from app.salesdrive_webhook import process_salesdrive_webhook
+from app.clarity import get_clarity_insights
+from app.telegram import send_report_to_telegram
+from app.analyze import generate_actionable_insights
 
 app = Flask(__name__)
-configure_logging()  # без аргументів!
+configure_logging()
+logger = logging.getLogger(__name__)
 
 @app.route("/healthz")
 def healthz():
+    logger.info("Health check requested")
     return {"status": "ok"}
 
-@app.route("/")
+@app.route("/", methods=["GET"])
 def index():
-    return Response("Hello, world!", mimetype="text/plain")
+    logger.info("Index page requested")
+    return Response("Bot service is running!", mimetype="text/plain")
+
+@app.route("/daily_report", methods=["POST", "GET"])
+def daily_report():
+    logger.info("Daily report requested")
+
+    try:
+        logger.info("Getting daily ecommerce report...")
+        ecom_data = get_daily_ecom_report()
+        logger.debug(f"Ecommerce data: {ecom_data}")
+
+        logger.info("Processing SalesDrive webhook...")
+        salesdrive_data = process_salesdrive_webhook()
+        logger.debug(f"SalesDrive data: {salesdrive_data}")
+
+        logger.info("Getting Clarity insights...")
+        clarity_data = get_clarity_insights()
+        logger.debug(f"Clarity data: {clarity_data}")
+
+        logger.info("Generating actionable insights...")
+        insights, recommendations = generate_actionable_insights(
+            ecom_data=ecom_data,
+            salesdrive_data=salesdrive_data,
+            clarity_data=clarity_data
+        )
+        logger.debug(f"Insights: {insights}")
+        logger.debug(f"Recommendations: {recommendations}")
+
+        report_text = f"{insights}\n\nРекомендації:\n{recommendations}"
+        logger.info("Sending report to Telegram...")
+        send_report_to_telegram(report_text)
+        logger.info("Report sent to Telegram successfully.")
+
+        return {"status": "sent", "report": report_text}
+
+    except Exception as e:
+        logger.exception("Error in daily_report route")
+        return {"status": "error", "message": str(e)}, 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
