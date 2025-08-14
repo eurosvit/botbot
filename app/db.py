@@ -2,29 +2,35 @@ import os, logging
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
-_engine=_Session=None
+
+_engine=None; _Session=None
+
 def _coerce(url):
     p=urlparse(url)
     return urlunparse(p._replace(scheme="postgresql+psycopg")) if p.scheme in ("postgres","postgresql") else url
-def _ssl(url):
+
+def _ensure_ssl(url):
     p=urlparse(url)
     if p.scheme.startswith("postgresql+psycopg"):
-        q=parse_qs(p.query)
+        q=parse_qs(p.query); 
         if "sslmode" not in q: q["sslmode"]=["require"]
         p=p._replace(query=urlencode(q,doseq=True))
     return urlunparse(p)
+
 def get_engine():
     global _engine,_Session
     if _engine is None:
         url=os.getenv("DATABASE_URL"); 
         if not url: raise RuntimeError("DATABASE_URL is not set")
-        url=_ssl(_coerce(url)); logging.info("{'event': 'db_engine'}")
+        url=_ensure_ssl(_coerce(url)); logging.info("{'event': 'db_engine'}")
         _engine=create_engine(url, pool_pre_ping=True, future=True)
-        _Session=sessionmaker(bind=_engine, future=True, autoflush=False, autocommit=False)
+        _Session=sessionmaker(bind=_engine, autoflush=False, autocommit=False, future=True)
     return _engine
+
 def get_session():
     if _Session is None: get_engine()
     return _Session()
+
 def migrate():
     eng=get_engine()
     with eng.begin() as c:
@@ -39,8 +45,7 @@ def migrate():
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_campaign TEXT",
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS status TEXT",
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipped_at TIMESTAMPTZ"
-        ):
-            c.execute(text(sql))
+        ): c.execute(text(sql))
         c.execute(text("CREATE INDEX IF NOT EXISTS idx_orders_shipped ON orders(shipped_at)"))
         c.execute(text("CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at)"))
         c.execute(text("CREATE INDEX IF NOT EXISTS idx_orders_campaign ON orders(utm_campaign)"))

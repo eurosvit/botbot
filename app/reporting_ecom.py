@@ -3,14 +3,18 @@ from decimal import Decimal as D
 from datetime import datetime, timedelta, date
 from sqlalchemy import text
 from .db import get_session
+
 REAL={s.lower() for s in ['Shipped','Completed','Delivered','Відвантажено','Закрито','Доставлено']}
 PROC={s.lower() for s in ['Processing','Pending','In Progress','В обробці','Очікує підтвердження','Очікує відправки']}
+
 def _margins():
     d=json.loads(os.getenv("BRAND_MARGINS_UAH","{}"))
     return {str(k): D(str(v)) for k,v in d.items()}, D(str(os.getenv("DEFAULT_MARGIN_UAH","0.3")))
-def _range(day, tz='Europe/Kyiv'):
+
+def _range(day: date, tz="Europe/Kyiv"):
     from zoneinfo import ZoneInfo
     s=datetime.combine(day, datetime.min.time()).replace(tzinfo=ZoneInfo(tz)); e=s+timedelta(days=1); return s,e
+
 def aggregate_finance(day:date):
     margins,defm=_margins(); s,e=_range(day); sess=get_session()
     row=sess.execute(text("SELECT COALESCE(SUM(cost),0), COALESCE(SUM(clicks),0), COALESCE(SUM(impressions),0) FROM ad_stats WHERE stat_date=:d"),{"d":day}).first()
@@ -25,7 +29,7 @@ def aggregate_finance(day:date):
         if (st or '').lower() in REAL:
             amt=D(str(amt or 0)); m=margins.get(str(br), defm)
             rs+=amt; gross+=amt*m; rc+=1
-            if camp and camp.strip() and camp.strip().lower()!="unknown": ads_c+=1
+            if camp and camp.strip() and camp.strip().lower()!='unknown': ads_c+=1
     avg=(rs/rc) if rc else D("0"); avgm=(gross/rs) if rs>0 else D("0"); mgr=rs*D("0.05"); net=gross-ad-mgr
     return {"new_orders_count":new_cnt,"processing_orders_count":proc_cnt,"processing_amount":proc_amt,
             "real_sales_count":rc,"real_sales_amount":rs,"real_avg_check":avg,"orders_ads_count":ads_c,

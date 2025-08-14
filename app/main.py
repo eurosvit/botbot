@@ -20,10 +20,9 @@ def webhook_salesdrive():
         s=get_session()
         oid=str(p.get("id") or p.get("order_id") or "")
         st=str(p.get("status") or p.get("order_status") or p.get("state") or "")
-        shipped=p.get("shipped_at") or p.get("delivery_date") or p.get("sent_at")
+        ship=p.get("shipped_at") or p.get("delivery_date") or p.get("sent_at")
         def amt_of(pp):
-            paths=(("total_uah",),("amount_uah",),("grand_total_uah",),("total",),("amount",),("order","amount"))
-            for path in paths:
+            for path in (("total_uah",),("amount_uah",),("grand_total_uah",),("total",),("amount",),("order","amount")):
                 node=pp
                 for k in path:
                     if isinstance(node, dict) and k in node: node=node[k]
@@ -37,12 +36,12 @@ def webhook_salesdrive():
         amount=amt_of(p)
         s.execute("INSERT INTO salesdrive_events(payload) VALUES (:p)", {"p": json.dumps(p)})
         if amount is not None:
-            if isinstance(shipped,(int,float)):
+            if isinstance(ship,(int,float)):
                 s.execute("INSERT INTO orders(order_id,amount_uah,brand,utm_campaign,status,shipped_at) VALUES (:o,:a,:b,:c,:s,to_timestamp(:t))",
-                          {"o":oid,"a":amount,"b":brand,"c":camp,"s":st,"t":shipped})
+                          {"o":oid,"a":amount,"b":brand,"c":camp,"s":st,"t":ship})
             else:
                 s.execute("INSERT INTO orders(order_id,amount_uah,brand,utm_campaign,status,shipped_at) VALUES (:o,:a,:b,:c,:s,:t)",
-                          {"o":oid,"a":amount,"b":brand,"c":camp,"s":st,"t":shipped})
+                          {"o":oid,"a":amount,"b":brand,"c":camp,"s":st,"t":ship})
         s.commit(); return ("ok",200)
     except Exception:
         logging.exception("webhook_store_failed"); return ("error",500)
