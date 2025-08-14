@@ -9,12 +9,6 @@ logger = logging.getLogger(__name__)
 def fetch_clarity_insights(num_of_days=1, dimension1=None, dimension2=None, dimension3=None):
     """
     Отримує інсайти з Microsoft Clarity через Data Export API.
-    
-    :param num_of_days: Кількість днів для експорту даних (1, 2, або 3)
-    :param dimension1: Перша вимірна категорія (наприклад, "OS", "Device")
-    :param dimension2: Друга вимірна категорія (опціонально)
-    :param dimension3: Третя вимірна категорія (опціонально)
-    :return: JSON з даними інсайтів або None у випадку помилки
     """
     token = os.getenv("CLARITY_TOKEN")
     if not token:
@@ -37,7 +31,7 @@ def fetch_clarity_insights(num_of_days=1, dimension1=None, dimension2=None, dime
     try:
         logger.info(f"Fetching insights from Clarity API for numOfDays={num_of_days}, dimensions={dimension1}, {dimension2}, {dimension3}")
         response = requests.get(f"{CLARITY_API_URL}/project-live-insights", headers=headers, params=params, timeout=10)
-        response.raise_for_status()  # Raise HTTPError for bad responses (4xx and 5xx)
+        response.raise_for_status()
         return response.json()
     except requests.exceptions.Timeout:
         logger.error("Request to Clarity API timed out.")
