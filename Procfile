@@ -1,1 +1,1 @@
-worker: python daily_report.py
+release: python daily_report.py
