@@ -1,1 +1,1 @@
-gunicorn -w 1 -b 0.0.0.0:$PORT app.main:app
+worker: python daily_report.py
