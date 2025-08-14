@@ -60,7 +60,7 @@ def daily_report():
         return {"status": "error", "message": str(e)}, 500
 
 @app.route("/webhooks/salesdrive", methods=["POST"])
-def salesdrive_webhook():
+def salesdrive_webhook_route():
     logger.info("SalesDrive webhook called")
     try:
         data = request.get_json(force=True, silent=True)
