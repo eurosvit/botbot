@@ -31,3 +31,15 @@ class Telegram:
             logging.exception("[TG SEND] tg_fail")
             print(f"[TG SEND] FAIL: {e}")
             return False
+
+def send_report_to_telegram(text):
+    """
+    Send a report message to Telegram using the configured bot.
+    """
+    try:
+        telegram = Telegram()
+        return telegram.send(text)
+    except Exception as e:
+        logging.exception("[TG] Failed to send report")
+        print(f"[TG] Failed to send report: {e}")
+        return False
