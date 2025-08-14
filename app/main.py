@@ -1,4 +1,6 @@
-import os, json, logging
+import os
+import json
+import logging
 from decimal import Decimal
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, Response
@@ -162,3 +164,8 @@ def report_preview():
         f"Конверсія обробки: {ship:.0f}% {flag}"
     ]
     return Response("\n".join(lines), mimetype="text/plain")
+
+# Додаємо запуск Flask для локального тесту (для Render/Gunicorn це не потрібно, але локально стане у пригоді)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
