@@ -15,39 +15,49 @@ def collect_daily_data():
     if not result:
         raise ValueError("No data found for the report.")
     
-    # Форматування даних у словник
+    # Безпечне отримання clarity_json
+    clarity = getattr(result, 'clarity_json', {}) or {}
+
+    def get_nested(d, *keys, default=None):
+        for k in keys:
+            if isinstance(d, dict) and k in d:
+                d = d[k]
+            else:
+                return default
+        return d
+
     return {
-        "real_sales_amount": result.real_sales_amount,
-        "real_sales_count": result.real_sales_count,
-        "processing_amount": result.processing_amount,
-        "processing_orders_count": result.processing_orders_count,
-        "cancelled_amount": result.cancelled_amount,
-        "cancelled_orders_count": result.cancelled_orders_count,
-        "ad_cost": result.ad_cost,
-        "manager_cost": result.manager_cost,
-        "avg_margin": result.avg_margin,
-        "net_profit": result.net_profit,
-        "total_orders": result.orders_count,
-        "orders_ads_count": result.orders_ads_count,
-        "avg_check": result.avg_check,
-        # Clarity та поведінка користувачів
-        "sessions": result.clarity_json['sessions'],
-        "bot_sessions": result.clarity_json['bot_sessions'],
-        "real_sessions": result.clarity_json['real_sessions'],
-        "unique_users": result.clarity_json['unique_users'],
-        "mobile_percentage": result.clarity_json['mobile_percentage'],
-        "pc_percentage": result.clarity_json['pc_percentage'],
-        "paid_search": result.clarity_json['channels']['paid_search'],
-        "direct": result.clarity_json['channels']['direct'],
-        "organic": result.clarity_json['channels']['organic'],
-        "other": result.clarity_json['channels']['other'],
-        "referral": result.clarity_json['channels']['referral'],
-        "top_pages": result.clarity_json['top_pages'],
-        "top_products": result.clarity_json['top_products'],
-        "quick_back_clicks": result.clarity_json['quick_back_clicks'],
-        "dead_clicks": result.clarity_json['dead_clicks'],
-        "js_errors": result.clarity_json['js_errors'],
-        "js_error_details": result.clarity_json['js_error_details'],
-        "recommendations": result.clarity_json['recommendations'],
-        "high_exit_page": result.clarity_json['high_exit_page']
+        "real_sales_amount": getattr(result, "real_sales_amount", 0),
+        "real_sales_count": getattr(result, "real_sales_count", 0),
+        "processing_amount": getattr(result, "processing_amount", 0),
+        "processing_orders_count": getattr(result, "processing_orders_count", 0),
+        "cancelled_amount": getattr(result, "cancelled_amount", 0),  # якщо колонки нема, буде 0
+        "cancelled_orders_count": getattr(result, "cancelled_orders_count", 0),
+        "ad_cost": getattr(result, "ad_cost", 0),
+        "manager_cost": getattr(result, "manager_cost", 0),
+        "avg_margin": getattr(result, "avg_margin", 0),
+        "net_profit": getattr(result, "net_profit", 0),
+        "total_orders": getattr(result, "orders_count", 0),
+        "orders_ads_count": getattr(result, "orders_ads_count", 0),
+        "avg_check": getattr(result, "avg_check", 0),
+        # Clarity та поведінка користувачів (з fallback)
+        "sessions": clarity.get("sessions", 0),
+        "bot_sessions": clarity.get("bot_sessions", 0),
+        "real_sessions": clarity.get("real_sessions", 0),
+        "unique_users": clarity.get("unique_users", 0),
+        "mobile_percentage": clarity.get("mobile_percentage", 0),
+        "pc_percentage": clarity.get("pc_percentage", 0),
+        "paid_search": get_nested(clarity, "channels", "paid_search", default=0),
+        "direct": get_nested(clarity, "channels", "direct", default=0),
+        "organic": get_nested(clarity, "channels", "organic", default=0),
+        "other": get_nested(clarity, "channels", "other", default=0),
+        "referral": get_nested(clarity, "channels", "referral", default=0),
+        "top_pages": clarity.get("top_pages", []),
+        "top_products": clarity.get("top_products", []),
+        "quick_back_clicks": clarity.get("quick_back_clicks", 0),
+        "dead_clicks": clarity.get("dead_clicks", 0),
+        "js_errors": clarity.get("js_errors", 0),
+        "js_error_details": clarity.get("js_error_details", ""),
+        "recommendations": clarity.get("recommendations", ""),
+        "high_exit_page": clarity.get("high_exit_page", ""),
     }
