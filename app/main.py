@@ -1,6 +1,9 @@
 import os
 import logging
 import socket
+from app.db import migrate       # ДОДАНО
+migrate()                        # ДОДАНО
+
 from flask import Flask, Response, request
 from app.logging_conf import configure_logging
 from app.reporting_ecom import get_daily_ecom_report
