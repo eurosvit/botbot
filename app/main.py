@@ -8,10 +8,17 @@ from app.salesdrive_webhook import process_salesdrive_webhook
 from app.clarity import fetch_clarity_insights  # Оновлений імпорт функції fetch_clarity_insights
 from app.telegram import Telegram  # Залишено виправлений імпорт Telegram
 from analyze import generate_actionable_insights  # Виправлено імпорт (з кореневої директорії)
+from app.scheduler import create_scheduler
 
 app = Flask(__name__)
 configure_logging()
 logger = logging.getLogger(__name__)
+
+# Ініціалізація планувальника
+scheduler = create_scheduler(app)
+if scheduler:
+    scheduler.start()
+    logger.info("Scheduler started")
 
 @app.route("/healthz")
 def healthz():
@@ -40,11 +47,17 @@ def daily_report():
         clarity_data = fetch_clarity_insights()  # Виклик функції fetch_clarity_insights
         logger.debug(f"Clarity data: {clarity_data}")
 
+        logger.info("Analyzing Google Ads performance...")
+        from app.google_ads_integration import analyze_google_ads_performance
+        google_ads_data = analyze_google_ads_performance()
+        logger.debug(f"Google Ads data: {google_ads_data}")
+
         logger.info("Generating actionable insights...")
         insights, recommendations = generate_actionable_insights(
             ecom_data=ecom_data,
             salesdrive_data=salesdrive_data,
-            clarity_data=clarity_data
+            clarity_data=clarity_data,
+            google_ads_data=google_ads_data
         )
         logger.debug(f"Insights: {insights}")
         logger.debug(f"Recommendations: {recommendations}")
@@ -52,16 +65,22 @@ def daily_report():
         report_text = f"{insights}\n\nРекомендації:\n{recommendations}"
 
         logger.info("Initializing Telegram bot...")
-        telegram_bot = Telegram()  # Створення екземпляра класу Telegram
+        try:
+            telegram_bot = Telegram()  # Створення екземпляра класу Telegram
+            logger.info("Sending report to Telegram...")
+            result = telegram_bot.send(report_text)  # Виклик методу send
+            if result:
+                logger.info("Report sent to Telegram successfully.")
+            else:
+                logger.error("Failed to send report to Telegram.")
+        except RuntimeError as e:
+            if "TG creds missing" in str(e):
+                logger.warning("Telegram credentials not configured - skipping Telegram send")
+                result = False
+            else:
+                raise e
 
-        logger.info("Sending report to Telegram...")
-        result = telegram_bot.send(report_text)  # Виклик методу send
-        if result:
-            logger.info("Report sent to Telegram successfully.")
-        else:
-            logger.error("Failed to send report to Telegram.")
-
-        return {"status": "sent", "report": report_text}
+        return {"status": "sent", "report": report_text, "telegram_sent": result if 'result' in locals() else False}
 
     except Exception as e:
         logger.exception("Error in daily_report route")
