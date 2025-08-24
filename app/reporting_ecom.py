@@ -52,7 +52,69 @@ def aggregate_finance(day:date):
     avg=(rs/rc) if rc else D("0"); avgm=(gp/rs) if rs>0 else D("0"); mgr=rs*D("0.05"); net=gp-ad-mgr
     logger.info(f"Finished calculations: new={len(new)}, processing={proc_c}, real={rc}")
     logger.debug(f"Finance dict: new_orders_count={len(new)}, real_sales_amount={rs}, net_profit={net}")
-    return {"new_orders_count":len(new),"processing_orders_count":proc_c,"processing_amount":proc_a,"real_sales_count":rc,"real_sales_amount":rs,"real_avg_check":avg,"orders_ads_count":ads_c,"ad_cost":ad,"manager_cost":mgr,"avg_margin":avgm,"gross_profit":gp,"net_profit":net,"clicks":clicks,"impressions":imp}
+
+    # === Запис у daily_reports ===
+    sess.execute(
+        text("""
+            INSERT INTO daily_reports (
+                day, orders_count, orders_ads_count, sales_total, avg_check, ad_cost, manager_cost, avg_margin, gross_profit, net_profit,
+                processing_orders_count, processing_amount, real_sales_count, real_sales_amount, real_avg_check
+            ) VALUES (
+                :day, :orders_count, :orders_ads_count, :sales_total, :avg_check, :ad_cost, :manager_cost, :avg_margin, :gross_profit, :net_profit,
+                :processing_orders_count, :processing_amount, :real_sales_count, :real_sales_amount, :real_avg_check
+            )
+            ON CONFLICT (day) DO UPDATE SET
+                orders_count = EXCLUDED.orders_count,
+                orders_ads_count = EXCLUDED.orders_ads_count,
+                sales_total = EXCLUDED.sales_total,
+                avg_check = EXCLUDED.avg_check,
+                ad_cost = EXCLUDED.ad_cost,
+                manager_cost = EXCLUDED.manager_cost,
+                avg_margin = EXCLUDED.avg_margin,
+                gross_profit = EXCLUDED.gross_profit,
+                net_profit = EXCLUDED.net_profit,
+                processing_orders_count = EXCLUDED.processing_orders_count,
+                processing_amount = EXCLUDED.processing_amount,
+                real_sales_count = EXCLUDED.real_sales_count,
+                real_sales_amount = EXCLUDED.real_sales_amount,
+                real_avg_check = EXCLUDED.real_avg_check
+        """),
+        {
+            "day": day,
+            "orders_count": len(new),
+            "orders_ads_count": ads_c,
+            "sales_total": rs,
+            "avg_check": avg,
+            "ad_cost": ad,
+            "manager_cost": mgr,
+            "avg_margin": avgm,
+            "gross_profit": gp,
+            "net_profit": net,
+            "processing_orders_count": proc_c,
+            "processing_amount": proc_a,
+            "real_sales_count": rc,
+            "real_sales_amount": rs,
+            "real_avg_check": avg,
+        }
+    )
+    sess.commit()
+
+    return {
+        "new_orders_count":len(new),
+        "processing_orders_count":proc_c,
+        "processing_amount":proc_a,
+        "real_sales_count":rc,
+        "real_sales_amount":rs,
+        "real_avg_check":avg,
+        "orders_ads_count":ads_c,
+        "ad_cost":ad,
+        "manager_cost":mgr,
+        "avg_margin":avgm,
+        "gross_profit":gp,
+        "net_profit":net,
+        "clicks":clicks,
+        "impressions":imp
+    }
 
 def get_daily_ecom_report():
     """
