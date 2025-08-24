@@ -6,3 +6,4 @@ SQLAlchemy==2.0.32
 psycopg[binary]==3.2.9
 requests==2.32.3
 pytz==2024.1
+google-ads==22.1.0
