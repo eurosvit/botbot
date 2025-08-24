@@ -1,40 +1,40 @@
-import requests
 import os
 import logging
-
-CLARITY_API_URL = "https://www.clarity.ms/export-data/api/v1"
+from datetime import date
+from app.db import get_session
+from app.clarity import fetch_clarity_insights
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
-def fetch_clarity_insights(num_of_days=1, dimension1=None, dimension2=None, dimension3=None):
+def save_clarity_to_daily_reports(target_date=None, num_of_days=1):
     """
-    Отримує інсайти з Microsoft Clarity через Data Export API.
+    Отримує інсайти Clarity і записує їх у поле clarity_json таблиці daily_reports.
     """
-    token = os.getenv("CLARITY_TOKEN")
-    if not token:
-        logger.error("Clarity API token is missing. Check CLARITY_TOKEN environment variable.")
-        return None
+    if not target_date:
+        target_date = date.today()
 
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-    
-    params = {"numOfDays": num_of_days}
-    if dimension1:
-        params["dimension1"] = dimension1
-    if dimension2:
-        params["dimension2"] = dimension2
-    if dimension3:
-        params["dimension3"] = dimension3
+    logger.info(f"Fetching Clarity insights for {target_date} (last {num_of_days} days)")
+    insights = fetch_clarity_insights(num_of_days=num_of_days)
+    if not insights:
+        logger.error("No Clarity insights received.")
+        return {"status": "error", "message": "No Clarity insights received."}
 
-    try:
-        logger.info(f"Fetching insights from Clarity API for numOfDays={num_of_days}, dimensions={dimension1}, {dimension2}, {dimension3}")
-        response = requests.get(f"{CLARITY_API_URL}/project-live-insights", headers=headers, params=params, timeout=10)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.Timeout:
-        logger.error("Request to Clarity API timed out.")
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Request to Clarity API failed: {e}")
-    return None
+    session = get_session()
+    # Записуємо clarity_json для відповідного дня
+    session.execute(
+        text("""
+            UPDATE daily_reports
+            SET clarity_json = :insights
+            WHERE day = :d
+        """),
+        {"insights": insights, "d": target_date}
+    )
+    session.commit()
+    logger.info("Clarity insights successfully saved to daily_reports.")
+    return {"status": "ok", "message": "Clarity insights saved.", "date": str(target_date)}
+
+if __name__ == "__main__":
+    # Приклад використання: записати інсайти за сьогодні
+    result = save_clarity_to_daily_reports()
+    print(result)
