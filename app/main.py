@@ -1,94 +1,31 @@
-import os
-import logging
-import socket
-from app.db import migrate       # ДОДАНО
-migrate()                        # ДОДАНО
+from app.db import migrate
+migrate()
 
 from flask import Flask, Response, request
 from app.logging_conf import configure_logging
-from app.reporting_ecom import get_daily_ecom_report
-from app.salesdrive_webhook import process_salesdrive_webhook
-from app.clarity import fetch_clarity_insights  # Оновлений імпорт функції fetch_clarity_insights
-from app.telegram import Telegram  # Залишено виправлений імпорт Telegram
-from analyze import generate_actionable_insights  # Виправлено імпорт (з кореневої директорії)
+from app.telegram import Telegram
+from collect_data import collect_daily_data
+from generate_report import format_daily_report
 
 app = Flask(__name__)
 configure_logging()
 logger = logging.getLogger(__name__)
 
-@app.route("/healthz")
-def healthz():
-    logger.info("Health check requested")
-    return {"status": "ok"}
-
-@app.route("/", methods=["GET"])
-def index():
-    logger.info("Index page requested")
-    return Response("Bot service is running!", mimetype="text/plain")
-
 @app.route("/daily_report", methods=["POST", "GET"])
 def daily_report():
     logger.info("Daily report requested")
-
     try:
-        logger.info("Getting daily ecommerce report...")
-        ecom_data = get_daily_ecom_report()
-        logger.debug(f"Ecommerce data: {ecom_data}")
-
-        logger.info("Processing SalesDrive webhook...")
-        salesdrive_data = process_salesdrive_webhook()
-        logger.debug(f"SalesDrive data: {salesdrive_data}")
-
-        logger.info("Getting Clarity insights...")
-        clarity_data = fetch_clarity_insights()  # Виклик функції fetch_clarity_insights
-        logger.debug(f"Clarity data: {clarity_data}")
-
-        logger.info("Generating actionable insights...")
-        insights, recommendations = generate_actionable_insights(
-            ecom_data=ecom_data,
-            salesdrive_data=salesdrive_data,
-            clarity_data=clarity_data
-        )
-        logger.debug(f"Insights: {insights}")
-        logger.debug(f"Recommendations: {recommendations}")
-
-        report_text = f"{insights}\n\nРекомендації:\n{recommendations}"
-
-        logger.info("Initializing Telegram bot...")
-        telegram_bot = Telegram()  # Створення екземпляра класу Telegram
-
-        logger.info("Sending report to Telegram...")
-        result = telegram_bot.send(report_text)  # Виклик методу send
+        data = collect_daily_data()
+        logger.debug(f"Aggregated daily data: {data}")
+        report_text = format_daily_report(data)
+        logger.info("Report text generated")
+        telegram_bot = Telegram()
+        result = telegram_bot.send(report_text)
         if result:
             logger.info("Report sent to Telegram successfully.")
         else:
             logger.error("Failed to send report to Telegram.")
-
         return {"status": "sent", "report": report_text}
-
     except Exception as e:
         logger.exception("Error in daily_report route")
         return {"status": "error", "message": str(e)}, 500
-
-@app.route("/webhooks/salesdrive", methods=["POST"])
-def salesdrive_webhook_route():
-    logger.info("SalesDrive webhook called")
-    try:
-        data = request.get_json(force=True, silent=True)
-        logger.debug(f"Incoming SalesDrive webhook data: {data}")
-        result = process_salesdrive_webhook(data)
-        logger.info("SalesDrive webhook processed successfully")
-        return {"status": "ok", "result": result}
-    except Exception as e:
-        logger.exception("Error processing SalesDrive webhook")
-        return {"status": "error", "message": str(e)}, 500
-
-def find_free_port():
-    """Find an available port to run the server."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))
-        return s.getsockname()[1]
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", find_free_port()))
-    app.run(host="0.0.0.0", port=port)
