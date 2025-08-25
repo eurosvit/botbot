@@ -123,5 +123,28 @@ def migrate():
             )
         """))
 
-        # Перевірка таблиці daily_reports для використання в analyze.py
+        # Таблиця для Clarity-даних (нова!)
+        c.execute(text("""
+            CREATE TABLE IF NOT EXISTS clarity_stats (
+                id SERIAL PRIMARY KEY,
+                stat_date DATE NOT NULL,
+                sessions INTEGER,
+                bot_sessions INTEGER,
+                real_sessions INTEGER,
+                unique_users INTEGER,
+                mobile_percentage INTEGER,
+                pc_percentage INTEGER,
+                channels JSONB,
+                top_pages JSONB,
+                top_products JSONB,
+                quick_back_clicks INTEGER,
+                dead_clicks INTEGER,
+                js_errors INTEGER,
+                js_error_details TEXT,
+                recommendations TEXT,
+                high_exit_page TEXT,
+                UNIQUE(stat_date)
+            )
+        """))
+
         logging.info("Migration completed successfully. All necessary tables are ready.")
