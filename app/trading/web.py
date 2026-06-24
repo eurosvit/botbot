@@ -131,6 +131,57 @@ def trades_json():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@bp.route("/optimize.json", methods=["GET"])
+def optimize_json():
+    """Запускає grid-search оптимізацію в браузері та повертає ТОП-комбінацій.
+
+    Параметри запиту: symbol, strategy, candles, market_type, leverage, allow_shorts.
+    Увага: тягне історію з біржі та проганяє багато бектестів — може зайняти час.
+    """
+    from dataclasses import replace
+    from .market import Market
+    from .backtest import fetch_history
+    from .optimize import optimize as run_optimize
+    try:
+        base = TradingConfig.from_env()
+        symbol = request.args.get("symbol") or base.symbols[0]
+        strategy = (request.args.get("strategy") or base.strategy).strip().lower()
+        candles_n = max(200, min(int(request.args.get("candles", 800)), 3000))
+        overrides = {"mode": "backtest", "strategy": strategy}
+        if request.args.get("market_type"):
+            overrides["market_type"] = request.args["market_type"].strip().lower()
+        if request.args.get("leverage"):
+            overrides["leverage"] = int(request.args["leverage"])
+        if request.args.get("allow_shorts"):
+            overrides["allow_shorts"] = request.args["allow_shorts"].strip().lower() in ("1", "true", "yes", "on")
+        cfg = replace(base, **overrides)
+
+        market = Market(cfg)
+        history = fetch_history(market, symbol, candles_n)
+        if len(history) < 100:
+            return jsonify({"status": "error", "message": f"мало історії: {len(history)}"}), 400
+        results = run_optimize(cfg, symbol, history, top=15)
+
+        def clean(r):
+            sc = r["score"]
+            return {
+                "params": r["params"],
+                "total_return_pct": round(r["total_return_pct"], 2),
+                "buy_hold_return_pct": round(r["buy_hold_return_pct"], 2),
+                "max_drawdown_pct": round(r["max_drawdown_pct"], 2),
+                "win_rate": round(r["win_rate"], 1),
+                "trades": r["trades"],
+                "score": round(sc, 2) if sc not in (float("inf"), float("-inf")) else None,
+            }
+        return jsonify({
+            "symbol": symbol, "strategy": strategy, "candles": len(history),
+            "results": [clean(r) for r in results],
+        })
+    except Exception as e:
+        log.exception("optimize.json error")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @bp.route("/run", methods=["POST", "GET"])
 def run_once():
     try:

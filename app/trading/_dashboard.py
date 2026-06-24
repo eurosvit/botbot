@@ -32,6 +32,13 @@ DASHBOARD_HTML = r"""<!doctype html>
   th { color:#8b949e; font-weight:600; }
   .muted { color:#8b949e; font-size:12px; }
   .empty { color:#8b949e; padding:24px; text-align:center; }
+  .optbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+  .optbar input, .optbar select { background:#0e1116; color:#e6edf3; border:1px solid #2b3947;
+      border-radius:8px; padding:8px 10px; font-size:13px; }
+  .optbar button { background:#1f6feb; color:#fff; border:0; border-radius:8px; padding:8px 16px;
+      font-size:13px; font-weight:600; cursor:pointer; }
+  .optbar button:disabled { opacity:.5; cursor:default; }
+  tr.best td { background:#1f6feb22; }
 </style>
 </head>
 <body>
@@ -47,6 +54,33 @@ DASHBOARD_HTML = r"""<!doctype html>
   <div class="panel">
     <div class="label muted">Крива капіталу</div>
     <canvas id="equityChart"></canvas>
+  </div>
+
+  <div class="panel">
+    <div class="label muted">Підбір параметрів (оптимізація на історії)</div>
+    <div class="optbar">
+      <input id="optSymbol" placeholder="BTC/USDT" value="BTC/USDT">
+      <select id="optStrategy">
+        <option value="ema_rsi">ema_rsi</option>
+        <option value="macd">macd</option>
+        <option value="bollinger">bollinger</option>
+        <option value="donchian">donchian</option>
+      </select>
+      <select id="optMarket">
+        <option value="spot">spot (long)</option>
+        <option value="swap">swap (long+short)</option>
+      </select>
+      <input id="optCandles" type="number" value="800" title="к-сть свічок" style="width:90px">
+      <button id="optBtn" onclick="runOptimize()">Підібрати ▶</button>
+      <span class="muted" id="optStatus"></span>
+    </div>
+    <table id="optTable" style="margin-top:12px">
+      <thead><tr>
+        <th>score</th><th>дохід%</th><th>B&amp;H%</th><th>просадка%</th>
+        <th>win%</th><th>угод</th><th>параметри</th>
+      </tr></thead>
+      <tbody><tr><td colspan="7" class="empty">натисни «Підібрати», щоб прогнати оптимізацію</td></tr></tbody>
+    </table>
   </div>
 
   <div class="panel">
@@ -134,6 +168,41 @@ function renderTrades(tr) {
     <td>${t.reason_close||""}</td>
     <td>${t.closed_at ? new Date(t.closed_at).toLocaleString("uk-UA",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}) : ""}</td>
   </tr>`).join("");
+}
+
+async function runOptimize() {
+  const btn = document.getElementById("optBtn");
+  const status = document.getElementById("optStatus");
+  const tb = document.querySelector("#optTable tbody");
+  const symbol = document.getElementById("optSymbol").value.trim() || "BTC/USDT";
+  const strategy = document.getElementById("optStrategy").value;
+  const market = document.getElementById("optMarket").value;
+  const candles = document.getElementById("optCandles").value || 800;
+  const shorts = market === "swap" ? "true" : "false";
+  btn.disabled = true; status.textContent = "виконується… (тягне історію + багато бектестів)";
+  tb.innerHTML = `<tr><td colspan="7" class="empty">рахуємо…</td></tr>`;
+  try {
+    const q = new URLSearchParams({symbol, strategy, candles, market_type:market, allow_shorts:shorts});
+    const r = await fetch("optimize.json?" + q.toString());
+    const d = await r.json();
+    if (d.status === "error") throw new Error(d.message);
+    if (!d.results || !d.results.length) { tb.innerHTML = `<tr><td colspan="7" class="empty">немає результатів</td></tr>`; }
+    else {
+      tb.innerHTML = d.results.map((x,i) => `<tr class="${i===0?'best':''}">
+        <td>${x.score===null?'—':fmt(x.score)}</td>
+        <td class="${cls(x.total_return_pct)}">${(x.total_return_pct>0?'+':'')+fmt(x.total_return_pct)}</td>
+        <td>${(x.buy_hold_return_pct>0?'+':'')+fmt(x.buy_hold_return_pct)}</td>
+        <td>${fmt(x.max_drawdown_pct)}</td>
+        <td>${fmt(x.win_rate,1)}</td>
+        <td>${x.trades}</td>
+        <td style="text-align:left">${Object.entries(x.params).map(([k,v])=>k+'='+v).join(' ')}</td>
+      </tr>`).join("");
+    }
+    status.textContent = `${d.symbol} · ${d.strategy} · ${d.candles} свічок`;
+  } catch(e) {
+    tb.innerHTML = `<tr><td colspan="7" class="empty">помилка: ${e.message||e}</td></tr>`;
+    status.textContent = "";
+  } finally { btn.disabled = false; }
 }
 
 load();
