@@ -25,7 +25,8 @@
 | Рушій | `engine.py` | торговий цикл: дані → сигнал → ризик → угода |
 | Бектест | `backtest.py` | перевірка стратегії на історії |
 | Воркер | `runner.py` | точка входу для фонового процесу |
-| Моніторинг | `web.py` | `GET /trading/status`, `POST /trading/run` |
+| Моніторинг | `web.py` | дашборд + `GET /trading/status`, `POST /trading/run` |
+| Дашборд | `_dashboard.py` | веб-сторінка: крива капіталу + таблиця угод |
 | Сповіщення | `notify.py` | угоди в Telegram |
 
 ## Як працює стратегія
@@ -52,9 +53,18 @@ export TRADE_MODE=paper
 python -m app.trading.runner              # безкінечний цикл
 python -m app.trading.runner once         # один прохід (для крону)
 
-# 3) Статус через HTTP
+# 3) Статус через HTTP / веб-дашборд
 curl localhost:8000/trading/status
+#  відкрий у браузері:  http://localhost:8000/trading/dashboard
 ```
+
+### Дашборд
+
+`GET /trading/dashboard` — веб-сторінка з кривою капіталу, картками
+(капітал, дохідність, PnL за сьогодні, win-стат) і таблицею останніх угод.
+Автооновлення кожні 15 c. Дані беруться з `trade_equity` / `trade_positions`.
+Перемикання режиму: `?mode=paper` або `?mode=live`. Графік малюється через
+Chart.js з CDN (жодних додаткових залежностей).
 
 ## Перехід на реальні гроші (коли впевнена)
 
