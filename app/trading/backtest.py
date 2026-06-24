@@ -11,7 +11,7 @@ import sys
 
 from .config import TradingConfig
 from .market import Market
-from .risk import position_size
+from .risk import position_size, pnl
 from .strategy import make_strategy, warmup_bars
 
 log = logging.getLogger(__name__)
@@ -43,67 +43,69 @@ def fetch_history(market: Market, symbol: str, total: int) -> list[list[float]]:
 
 def run(cfg: TradingConfig, symbol: str, candles: list[list[float]]) -> dict:
     strat = make_strategy(cfg)
-    cash = cfg.paper_balance
-    position = None  # {"entry", "qty", "sl", "tp"}
+    cash = cfg.paper_balance          # реалізований баланс
+    position = None  # {"side", "entry", "qty", "sl", "tp"}
     trades: list[dict] = []
-    equity_curve: list[float] = []
     peak = cash
     max_dd = 0.0
-
     warmup = warmup_bars(cfg)
 
-    for i in range(warmup, len(candles)):
-        high = candles[i][2]
-        low = candles[i][3]
-        close = candles[i][4]
+    def close_pos(exit_price: float, reason: str) -> None:
+        nonlocal cash, position
+        p = pnl(position["side"], position["entry"], exit_price, position["qty"])
+        cash += p
+        notional = position["qty"] * position["entry"]
+        trades.append({"pnl": p, "pnl_pct": (p / notional * 100) if notional else 0.0,
+                       "reason": reason, "side": position["side"]})
+        position = None
 
-        # 1) Спершу керуємо відкритою позицією (intrabar SL/TP).
+    for i in range(warmup, len(candles)):
+        high, low, close = candles[i][2], candles[i][3], candles[i][4]
+
+        # 1) Спершу керуємо відкритою позицією (intrabar SL/TP, з урахуванням боку).
         if position:
-            exit_price = None
-            reason = None
-            if low <= position["sl"]:
-                exit_price, reason = position["sl"], "SL"
-            elif high >= position["tp"]:
-                exit_price, reason = position["tp"], "TP"
-            if exit_price is not None:
-                pnl = (exit_price - position["entry"]) * position["qty"]
-                cash += position["qty"] * exit_price
-                trades.append({"pnl": pnl, "pnl_pct": (exit_price / position["entry"] - 1) * 100,
-                               "reason": reason})
-                position = None
+            if position["side"] == "long":
+                if low <= position["sl"]:
+                    close_pos(position["sl"], "SL")
+                elif high >= position["tp"]:
+                    close_pos(position["tp"], "TP")
+            else:  # short
+                if high >= position["sl"]:
+                    close_pos(position["sl"], "SL")
+                elif low <= position["tp"]:
+                    close_pos(position["tp"], "TP")
 
         # 2) Сигнал на закритих свічках [0..i].
         signal = strat.evaluate(candles[: i + 1])
 
-        if position and signal.action == "sell":
-            pnl = (close - position["entry"]) * position["qty"]
-            cash += position["qty"] * close
-            trades.append({"pnl": pnl, "pnl_pct": (close / position["entry"] - 1) * 100,
-                           "reason": "exit-signal"})
-            position = None
+        # Вихід за протилежним сигналом.
+        if position:
+            if position["side"] == "long" and signal.action == "sell":
+                close_pos(close, "exit-signal")
+            elif position["side"] == "short" and signal.action == "buy":
+                close_pos(close, "exit-signal")
 
-        if position is None and signal.action == "buy":
-            sl, tp = signal.sl_tp(cfg)
-            if sl:
-                equity_now = cash
-                qty = position_size(equity_now, cash, close, sl, cfg.risk_per_trade)
-                if qty > 0:
-                    cash -= qty * close
-                    position = {"entry": close, "qty": qty, "sl": sl, "tp": tp}
+        # 3) Входи: buy → long; sell → short (якщо дозволено).
+        if position is None:
+            side = "long" if signal.action == "buy" else ("short" if signal.action == "sell" and cfg.allow_shorts else None)
+            if side:
+                sl, tp = signal.levels(cfg, side)
+                if sl:
+                    qty = position_size(cash, cash, close, sl, cfg.risk_per_trade,
+                                        side=side, leverage=cfg.leverage)
+                    if qty > 0:
+                        position = {"side": side, "entry": close, "qty": qty, "sl": sl, "tp": tp}
 
-        # 3) Облік капіталу та просадки.
-        equity = cash + (position["qty"] * close if position else 0.0)
-        equity_curve.append(equity)
+        # 4) Облік капіталу та просадки (нереалізований PnL).
+        unreal = pnl(position["side"], position["entry"], close, position["qty"]) if position else 0.0
+        equity = cash + unreal
         peak = max(peak, equity)
         if peak > 0:
             max_dd = max(max_dd, (peak - equity) / peak)
 
     # Закрити позицію по останній ціні.
     if position:
-        close = candles[-1][4]
-        cash += position["qty"] * close
-        trades.append({"pnl": (close - position["entry"]) * position["qty"],
-                       "pnl_pct": (close / position["entry"] - 1) * 100, "reason": "end"})
+        close_pos(candles[-1][4], "end")
 
     final = cash
     wins = [t for t in trades if t["pnl"] > 0]

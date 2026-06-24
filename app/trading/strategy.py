@@ -29,11 +29,17 @@ class Signal:
     reason: str = ""
     extra: dict = field(default_factory=dict)
 
-    def sl_tp(self, cfg: TradingConfig) -> tuple[float | None, float | None]:
-        """Рівні стоп-лосс / тейк-профіт для LONG-входу на основі ATR."""
+    def levels(self, cfg: TradingConfig, side: str = "long") -> tuple[float | None, float | None]:
+        """Рівні стоп-лосс / тейк-профіт на основі ATR для long або short."""
         if not self.atr:
             return None, None
+        if side == "short":
+            return self.price + cfg.atr_sl_mult * self.atr, self.price - cfg.atr_tp_mult * self.atr
         return self.price - cfg.atr_sl_mult * self.atr, self.price + cfg.atr_tp_mult * self.atr
+
+    def sl_tp(self, cfg: TradingConfig) -> tuple[float | None, float | None]:
+        """Сумісність: рівні для LONG-входу."""
+        return self.levels(cfg, "long")
 
 
 class BaseStrategy:

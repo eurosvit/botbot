@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.trading import indicators as ind
 from app.trading.config import TradingConfig
-from app.trading.risk import position_size, daily_loss_exceeded
+from app.trading.risk import position_size, daily_loss_exceeded, pnl
 from app.trading.strategy import make_strategy, warmup_bars, STRATEGIES
 from app.trading import backtest, optimize
 
@@ -74,6 +74,18 @@ def test_risk():
     check("денний стоп спрацьовує", daily_loss_exceeded(-60, 1000, 0.05) is True)
     check("денний стоп не спрацьовує", daily_loss_exceeded(-10, 1000, 0.05) is False)
 
+    # short: стоп вище входу (100 -> 105), ризик/од=5 => qty=2
+    check("short розмір за ризиком = 2",
+          abs(position_size(1000, 1000, 100, 105, 0.01, side="short") - 2.0) < 1e-9)
+    check("short некоректний SL (нижче входу) => 0",
+          position_size(1000, 1000, 100, 95, 0.01, side="short") == 0)
+    # плече збільшує купівельну спроможність: cash=100 => без плеча cap=1, з x5 cap=5
+    check("без плеча обмеження кешем = 1", abs(position_size(1000, 100, 100, 95, 0.01) - 1.0) < 1e-9)
+    check("плече x5 знімає обмеження до ризику = 2",
+          abs(position_size(1000, 100, 100, 95, 0.01, leverage=5) - 2.0) < 1e-9)
+    check("pnl long", abs(pnl("long", 100, 110, 2) - 20.0) < 1e-9)
+    check("pnl short", abs(pnl("short", 100, 90, 2) - 20.0) < 1e-9)
+
 
 def _synthetic_trend(n=400):
     """Свічки з висхідним трендом + цикли, щоб EMA перетиналися (входи/виходи)."""
@@ -134,6 +146,34 @@ def test_all_strategies():
               f"DD={res['max_drawdown_pct']:.2f}%")
 
 
+def test_futures_shorts():
+    print("ф'ючерси + шорти:")
+    # валідація конфігу
+    cfg = TradingConfig.from_env()
+    cfg.market_type = "swap"; cfg.leverage = 3; cfg.allow_shorts = True; cfg.strategy = "macd"
+    try:
+        cfg.validate(); ok = True
+    except Exception:
+        ok = False
+    check("swap+плече+шорти валідуються", ok)
+
+    bad = TradingConfig.from_env()
+    bad.allow_shorts = True  # spot + shorts -> помилка
+    try:
+        bad.validate(); rejected = False
+    except Exception:
+        rejected = True
+    check("шорти на споті відхиляються", rejected)
+
+    # ф'ючерсний бектест із шортами проганяється коректно
+    cfg.mode = "backtest"
+    candles = _synthetic_trend(400)
+    res = backtest.run(cfg, "TEST/USDT", candles)
+    check("ф'ючерсний бектест працює", isinstance(res["trades"], int) and res["final_balance"] > 0)
+    print(f"    -> [swap x3, shorts] угод={res['trades']} дохідність={res['total_return_pct']:+.2f}% "
+          f"DD={res['max_drawdown_pct']:.2f}%")
+
+
 def test_optimizer():
     print("оптимізатор:")
     cfg = TradingConfig.from_env()
@@ -160,6 +200,7 @@ def main():
     test_risk()
     test_strategy_and_backtest()
     test_all_strategies()
+    test_futures_shorts()
     test_optimizer()
     print("-" * 50)
     print(f"Результат: {PASS} пройдено, {FAIL} провалено")

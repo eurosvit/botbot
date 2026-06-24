@@ -34,6 +34,9 @@ class TradingConfig:
     # --- Режим роботи ---
     mode: str                     # paper | live | backtest
     testnet: bool                 # для live: торгувати на sandbox/testnet біржі
+    market_type: str              # spot | swap (perpetual-ф'ючерси)
+    leverage: int                 # плече (тільки для swap)
+    allow_shorts: bool            # дозволити короткі позиції (тільки swap)
 
     # --- Капітал ---
     paper_balance: float          # стартовий віртуальний баланс для paper-режиму
@@ -76,6 +79,9 @@ class TradingConfig:
             quote_currency=os.getenv("TRADE_QUOTE", "USDT"),
             mode=os.getenv("TRADE_MODE", "paper").strip().lower(),
             testnet=_b("TRADE_TESTNET", "false"),
+            market_type=os.getenv("TRADE_MARKET_TYPE", "spot").strip().lower(),
+            leverage=_i("TRADE_LEVERAGE", "1"),
+            allow_shorts=_b("TRADE_ALLOW_SHORTS", "false"),
             paper_balance=_f("TRADE_PAPER_BALANCE", "1000"),
             strategy=os.getenv("TRADE_STRATEGY", "ema_rsi").strip().lower(),
             ema_fast=_i("TRADE_EMA_FAST", "12"),
@@ -113,3 +119,11 @@ class TradingConfig:
             raise ValueError("RISK_PER_TRADE має бути в діапазоні (0, 0.5)")
         if not self.symbols:
             raise ValueError("Не задано жодного символу (TRADE_SYMBOLS)")
+        if self.market_type not in ("spot", "swap"):
+            raise ValueError(f"Невідомий TRADE_MARKET_TYPE: {self.market_type}")
+        if self.leverage < 1:
+            raise ValueError("TRADE_LEVERAGE має бути >= 1")
+        if self.market_type == "spot" and self.leverage != 1:
+            raise ValueError("Плече доступне лише для market_type=swap")
+        if self.allow_shorts and self.market_type != "swap":
+            raise ValueError("Короткі позиції потребують market_type=swap")

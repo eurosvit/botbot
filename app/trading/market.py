@@ -27,7 +27,8 @@ class Market:
             raise ValueError(f"ccxt не знає біржу '{cfg.exchange}'")
         klass = getattr(ccxt, cfg.exchange)
 
-        params: dict = {"enableRateLimit": True}
+        params: dict = {"enableRateLimit": True,
+                        "options": {"defaultType": cfg.market_type}}
         # Ключі потрібні лише для live; беремо за конвенцією EXCHANGE-агностично.
         api_key = os.getenv("TRADE_API_KEY")
         api_secret = os.getenv("TRADE_API_SECRET")
@@ -60,11 +61,19 @@ class Market:
 
     # --- Приватні операції (тільки live) ---
 
-    def create_market_buy(self, symbol: str, amount: float) -> dict:
-        return self.client.create_order(symbol, "market", "buy", amount)
+    def create_market_buy(self, symbol: str, amount: float, reduce_only: bool = False) -> dict:
+        params = {"reduceOnly": True} if reduce_only else {}
+        return self.client.create_order(symbol, "market", "buy", amount, None, params)
 
-    def create_market_sell(self, symbol: str, amount: float) -> dict:
-        return self.client.create_order(symbol, "market", "sell", amount)
+    def create_market_sell(self, symbol: str, amount: float, reduce_only: bool = False) -> dict:
+        params = {"reduceOnly": True} if reduce_only else {}
+        return self.client.create_order(symbol, "market", "sell", amount, None, params)
+
+    def set_leverage(self, leverage: int, symbol: str) -> None:
+        try:
+            self.client.set_leverage(leverage, symbol)
+        except Exception:
+            log.warning("Не вдалося встановити плече %sx для %s", leverage, symbol)
 
     def free_balance(self, currency: str) -> float:
         bal = self.client.fetch_balance()

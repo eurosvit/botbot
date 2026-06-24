@@ -74,45 +74,63 @@ class Engine:
             self._manage_open(position, signal, price)
             return
 
-        if entries_blocked or signal.action != "buy":
+        if entries_blocked:
+            return
+        # Визначаємо бік входу: buy → long; sell → short (лише якщо дозволено).
+        if signal.action == "buy":
+            side = "long"
+        elif signal.action == "sell" and self.cfg.allow_shorts:
+            side = "short"
+        else:
             return
         if open_count >= self.cfg.max_open_positions:
             log.info("%s: ліміт відкритих позицій (%d)", symbol, self.cfg.max_open_positions)
             return
 
-        sl, tp = signal.sl_tp(self.cfg)
+        sl, tp = signal.levels(self.cfg, side)
         if sl is None:
             return
-        qty = risk.position_size(equity, cash, price, sl, self.cfg.risk_per_trade)
+        qty = risk.position_size(equity, cash, price, sl, self.cfg.risk_per_trade,
+                                 side=side, leverage=self.cfg.leverage)
         if qty <= 0:
             log.info("%s: нульовий розмір позиції (мало кешу/ризику)", symbol)
             return
 
-        pos_id = self.broker.buy(symbol, qty, price, sl, tp, signal.reason)
+        pos_id = self.broker.open(symbol, side, qty, price, sl, tp, signal.reason)
         if pos_id:
+            emoji = "🟢" if side == "long" else "🔴"
             self.notifier.send(
-                f"🟢 <b>BUY</b> {symbol}\n"
+                f"{emoji} <b>{'LONG' if side == 'long' else 'SHORT'}</b> {symbol}\n"
                 f"Ціна: {price:.4f}\nК-сть: {qty:.6f}\n"
                 f"SL: {sl:.4f}  TP: {tp:.4f}\n"
                 f"Привід: {signal.reason}\nРежим: {self.broker.mode}"
             )
 
     def _manage_open(self, position, signal, price):
+        side = position["side"]
         sl = float(position["stop_loss"]) if position["stop_loss"] is not None else None
         tp = float(position["take_profit"]) if position["take_profit"] is not None else None
         reason = None
-        if sl is not None and price <= sl:
-            reason = "стоп-лосс"
-        elif tp is not None and price >= tp:
-            reason = "тейк-профіт"
-        elif signal.action == "sell":
-            reason = f"сигнал на вихід ({signal.reason})"
+        if side == "long":
+            if sl is not None and price <= sl:
+                reason = "стоп-лосс"
+            elif tp is not None and price >= tp:
+                reason = "тейк-профіт"
+            elif signal.action == "sell":
+                reason = f"сигнал на вихід ({signal.reason})"
+        else:  # short
+            if sl is not None and price >= sl:
+                reason = "стоп-лосс"
+            elif tp is not None and price <= tp:
+                reason = "тейк-профіт"
+            elif signal.action == "buy":
+                reason = f"сигнал на вихід ({signal.reason})"
 
         if reason:
-            res = self.broker.sell(position, price, reason)
+            res = self.broker.close(position, price, reason)
             emoji = "✅" if res["pnl"] >= 0 else "🔻"
             self.notifier.send(
-                f"{emoji} <b>SELL</b> {position['symbol']}\n"
+                f"{emoji} <b>CLOSE {side.upper()}</b> {position['symbol']}\n"
                 f"Ціна: {price:.4f}\n"
                 f"PnL: {res['pnl']:.2f} ({res['pnl_pct']:.2f}%)\n"
                 f"Причина: {reason}\nРежим: {self.broker.mode}"
