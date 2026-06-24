@@ -50,6 +50,12 @@ def run(cfg: TradingConfig, symbol: str, candles: list[list[float]]) -> dict:
     max_dd = 0.0
     warmup = warmup_bars(cfg)
 
+    # Індикатори рахуємо ОДИН раз на всю серію (O(N) замість O(N²)).
+    closes = [c[4] for c in candles]
+    highs = [c[2] for c in candles]
+    lows = [c[3] for c in candles]
+    inddata = strat.indicators(closes, highs, lows)
+
     def close_pos(exit_price: float, reason: str) -> None:
         nonlocal cash, position
         p = pnl(position["side"], position["entry"], exit_price, position["qty"])
@@ -75,8 +81,8 @@ def run(cfg: TradingConfig, symbol: str, candles: list[list[float]]) -> dict:
                 elif low <= position["tp"]:
                     close_pos(position["tp"], "TP")
 
-        # 2) Сигнал на закритих свічках [0..i].
-        signal = strat.evaluate(candles[: i + 1])
+        # 2) Сигнал на барі i (за попередньо порахованими індикаторами).
+        signal = strat.signal_at(i, closes, inddata)
 
         # Вихід за протилежним сигналом.
         if position:
