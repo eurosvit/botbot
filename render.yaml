@@ -1,0 +1,38 @@
+# Render Blueprint — безкоштовний деплой торгового бота (paper-режим).
+#
+# База даних зовнішня (Neon, безкоштовна), тому DATABASE_URL вводиться вручну
+# при створенні (sync: false). Бот працює як web-сервіс; зовнішній безкоштовний
+# пінгер (cron-job.org) періодично смикає /trading/run — це й будить free-сервіс,
+# і запускає ітерацію торгівлі. Деталі — у docs/DEPLOY.md.
+#
+# ⚠️ Назву (name) зміни на свою унікальну перед створенням.
+
+services:
+  - type: web
+    name: trader-mvp
+    runtime: python
+    plan: free
+    branch: claude/trading-service-mvp-tcrrer
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app.main:app
+    envVars:
+      - key: DATABASE_URL          # ← встав connection string з Neon при деплої
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.13.0"
+      - key: TRADE_MODE
+        value: paper               # БЕЗ ризику: віртуальні гроші на реальних цінах
+      - key: TRADE_EXCHANGE
+        value: binance             # якщо Binance недоступний — спробуй kraken/bybit
+      - key: TRADE_SYMBOLS
+        value: BTC/USDT,ETH/USDT
+      - key: TRADE_TIMEFRAME
+        value: 15m
+      - key: TRADE_STRATEGY
+        value: ema_rsi
+      - key: TRADE_PAPER_BALANCE
+        value: "1000"
+      - key: TRADE_RISK_PER_TRADE
+        value: "0.01"
+      - key: TRADE_NOTIFY
+        value: "false"             # увімкни true + додай TG_BOT_TOKEN/TG_CHAT_ID для сповіщень

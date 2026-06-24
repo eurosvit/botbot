@@ -13,6 +13,7 @@ HTTP-ендпоінти для моніторингу торгівлі (read-onl
 from __future__ import annotations
 
 import logging
+import os
 
 from flask import Blueprint, Response, jsonify, request
 
@@ -184,6 +185,10 @@ def optimize_json():
 
 @bp.route("/run", methods=["POST", "GET"])
 def run_once():
+    # Опційний захист: якщо задано TRADE_RUN_TOKEN — вимагаємо ?token=...
+    expected = os.getenv("TRADE_RUN_TOKEN")
+    if expected and request.args.get("token") != expected:
+        return jsonify({"status": "error", "message": "unauthorized"}), 401
     try:
         from .engine import Engine
         cfg = TradingConfig.from_env()
