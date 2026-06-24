@@ -23,7 +23,7 @@ services:
       - key: TRADE_MODE
         value: paper               # БЕЗ ризику: віртуальні гроші на реальних цінах
       - key: TRADE_EXCHANGE
-        value: binance             # якщо Binance недоступний — спробуй kraken/bybit
+        value: kraken              # Binance блокує US-IP Render (451); Kraken працює зі США
       - key: TRADE_SYMBOLS
         value: BTC/USDT,ETH/USDT
       - key: TRADE_TIMEFRAME
