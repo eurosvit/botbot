@@ -132,6 +132,52 @@ def trades_json():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+def format_daily_summary(stats: dict, cfg: TradingConfig, day: str) -> str:
+    """Текст щоденного підсумку для Telegram."""
+    eq = stats["equity"]
+    ret = f"{(eq / cfg.paper_balance - 1) * 100:+.2f}%" if eq else "—"
+    cash = f"{stats['cash']:.2f}" if stats["cash"] is not None else "—"
+    eq_s = f"{eq:.2f}" if eq is not None else "—"
+    today_line = f"📈 Сьогодні: {stats['trades_today']} угод, PnL <b>{stats['pnl_today']:+.2f}</b>"
+    if stats["trades_today"]:
+        today_line += f" ({stats['wins_today']} прибуткових)"
+    return (
+        f"📊 <b>Підсумок дня</b> — {day}\n"
+        f"Режим: {cfg.mode} · {cfg.exchange} · {cfg.timeframe}\n"
+        f"——————————————\n"
+        f"💰 Капітал: <b>{eq_s}</b> {cfg.quote_currency} ({ret})\n"
+        f"   готівка: {cash}\n"
+        f"{today_line}\n"
+        f"📌 Відкритих позицій: {stats['open_positions']}\n"
+        f"Σ Усього: {stats['trades_total']} угод, реалізований PnL {stats['pnl_total']:+.2f}"
+    )
+
+
+@bp.route("/daily-summary", methods=["GET", "POST"])
+def daily_summary():
+    """Надсилає щоденний підсумок у Telegram. Підключи до денного крону (cron-job.org)."""
+    expected = os.getenv("TRADE_RUN_TOKEN")
+    if expected and request.args.get("token") != expected:
+        return jsonify({"status": "error", "message": "unauthorized"}), 401
+    from datetime import datetime, timezone
+    from .notify import Notifier
+    try:
+        cfg = TradingConfig.from_env()
+        store.migrate_trading()
+        stats = store.daily_stats(cfg.mode)
+        day = datetime.now(timezone.utc).strftime("%d.%m.%Y")
+        msg = format_daily_summary(stats, cfg, day)
+        sent = False
+        n = Notifier(enabled=True)
+        if n.tg is not None:
+            n.send(msg)
+            sent = True
+        return jsonify({"ok": True, "sent": sent, "stats": stats})
+    except Exception as e:
+        log.exception("daily-summary error")
+        return jsonify({"ok": False, "message": str(e)}), 500
+
+
 @bp.route("/test-notify", methods=["GET"])
 def test_notify():
     """Надсилає тестове повідомлення в Telegram — перевірка налаштувань сповіщень."""

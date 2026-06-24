@@ -114,6 +114,39 @@ def snapshot_equity(mode: str, equity: float, cash: float, open_count: int) -> N
         """), {"mode": mode, "equity": equity, "cash": cash, "open_count": open_count})
 
 
+def daily_stats(mode: str) -> dict:
+    """Зведена статистика для щоденного підсумку."""
+    eng = get_engine()
+    with eng.begin() as c:
+        last_eq = c.execute(text("""
+            SELECT equity, cash FROM trade_equity
+             WHERE mode=:mode ORDER BY ts DESC LIMIT 1
+        """), {"mode": mode}).mappings().first()
+        today = c.execute(text("""
+            SELECT COUNT(*) AS n, COALESCE(SUM(pnl), 0) AS pnl,
+                   COALESCE(SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END), 0) AS wins
+              FROM trade_positions
+             WHERE status='closed' AND mode=:mode AND closed_at >= date_trunc('day', NOW())
+        """), {"mode": mode}).mappings().first()
+        total = c.execute(text("""
+            SELECT COUNT(*) AS n, COALESCE(SUM(pnl), 0) AS pnl
+              FROM trade_positions WHERE status='closed' AND mode=:mode
+        """), {"mode": mode}).mappings().first()
+        open_n = c.execute(text("""
+            SELECT COUNT(*) FROM trade_positions WHERE status='open' AND mode=:mode
+        """), {"mode": mode}).scalar_one()
+    return {
+        "equity": float(last_eq["equity"]) if last_eq else None,
+        "cash": float(last_eq["cash"]) if last_eq else None,
+        "trades_today": int(today["n"]),
+        "pnl_today": float(today["pnl"]),
+        "wins_today": int(today["wins"]),
+        "open_positions": int(open_n),
+        "trades_total": int(total["n"]),
+        "pnl_total": float(total["pnl"]),
+    }
+
+
 def realized_pnl_today(mode: str) -> float:
     """Сума реалізованого PnL за сьогодні (для денного стоп-ліміту)."""
     eng = get_engine()

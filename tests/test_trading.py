@@ -174,6 +174,18 @@ def test_futures_shorts():
           f"DD={res['max_drawdown_pct']:.2f}%")
 
 
+def test_daily_summary_format():
+    print("щоденний підсумок:")
+    from app.trading.web import format_daily_summary
+    cfg = TradingConfig.from_env()
+    stats = {"equity": 1054.6, "cash": 1054.6, "trades_today": 2, "pnl_today": 12.5,
+             "wins_today": 1, "open_positions": 1, "trades_total": 8, "pnl_total": 54.6}
+    msg = format_daily_summary(stats, cfg, "24.06.2026")
+    check("підсумок містить капітал і PnL", "Капітал" in msg and "+12.50" in msg)
+    check("підсумок коректний за нульових угод",
+          "Сьогодні: 0 угод" in format_daily_summary({**stats, "trades_today": 0, "wins_today": 0}, cfg, "x"))
+
+
 def test_report():
     print("звіт:")
     cfg = TradingConfig.from_env()
@@ -213,6 +225,7 @@ def main():
     test_strategy_and_backtest()
     test_all_strategies()
     test_futures_shorts()
+    test_daily_summary_format()
     test_report()
     test_optimizer()
     print("-" * 50)
