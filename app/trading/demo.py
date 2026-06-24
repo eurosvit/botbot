@@ -13,7 +13,7 @@ import math
 
 from .config import TradingConfig
 from .risk import position_size
-from .strategy import Strategy
+from .strategy import make_strategy, warmup_bars
 
 
 def synthetic_candles(n: int = 500) -> list[list[float]]:
@@ -32,15 +32,15 @@ def synthetic_candles(n: int = 500) -> list[list[float]]:
 
 
 def run_demo(cfg: TradingConfig, candles: list[list[float]]) -> None:
-    strat = Strategy(cfg)
+    strat = make_strategy(cfg)
     cash = cfg.paper_balance
     position = None
     trades = []
-    warmup = max(cfg.ema_slow, cfg.rsi_period, cfg.atr_period) + 2
+    warmup = warmup_bars(cfg)
 
     print("=" * 64)
-    print(f"ДЕМО (офлайн) | старт {cfg.paper_balance:.2f} | ризик/угоду {cfg.risk_per_trade*100:.0f}%")
-    print(f"EMA {cfg.ema_fast}/{cfg.ema_slow} | RSI {cfg.rsi_period} | ATR SL×{cfg.atr_sl_mult} TP×{cfg.atr_tp_mult}")
+    print(f"ДЕМО (офлайн) | стратегія {cfg.strategy} | старт {cfg.paper_balance:.2f} | ризик/угоду {cfg.risk_per_trade*100:.0f}%")
+    print(f"ATR SL×{cfg.atr_sl_mult} TP×{cfg.atr_tp_mult}")
     print("=" * 64)
 
     for i in range(warmup, len(candles)):

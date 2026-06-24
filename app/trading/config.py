@@ -38,7 +38,8 @@ class TradingConfig:
     # --- Капітал ---
     paper_balance: float          # стартовий віртуальний баланс для paper-режиму
 
-    # --- Стратегія (EMA-кросовер + RSI-фільтр + ATR для SL/TP) ---
+    # --- Стратегія ---
+    strategy: str                 # ema_rsi | macd | bollinger | donchian
     ema_fast: int
     ema_slow: int
     rsi_period: int
@@ -47,6 +48,12 @@ class TradingConfig:
     atr_period: int
     atr_sl_mult: float            # стоп-лосс = entry - atr_sl_mult * ATR
     atr_tp_mult: float            # тейк-профіт = entry + atr_tp_mult * ATR
+    bb_period: int                # смуги Боллінджера: період
+    bb_std: float                 # смуги Боллінджера: к-сть стд. відхилень
+    donchian_period: int          # канал Дончіана: період пробою
+    macd_fast: int
+    macd_slow: int
+    macd_signal: int
 
     # --- Ризик-менеджмент ---
     risk_per_trade: float         # частка капіталу під ризиком на угоду (0.01 = 1%)
@@ -70,6 +77,7 @@ class TradingConfig:
             mode=os.getenv("TRADE_MODE", "paper").strip().lower(),
             testnet=_b("TRADE_TESTNET", "false"),
             paper_balance=_f("TRADE_PAPER_BALANCE", "1000"),
+            strategy=os.getenv("TRADE_STRATEGY", "ema_rsi").strip().lower(),
             ema_fast=_i("TRADE_EMA_FAST", "12"),
             ema_slow=_i("TRADE_EMA_SLOW", "26"),
             rsi_period=_i("TRADE_RSI_PERIOD", "14"),
@@ -78,6 +86,12 @@ class TradingConfig:
             atr_period=_i("TRADE_ATR_PERIOD", "14"),
             atr_sl_mult=_f("TRADE_ATR_SL_MULT", "1.5"),
             atr_tp_mult=_f("TRADE_ATR_TP_MULT", "3.0"),
+            bb_period=_i("TRADE_BB_PERIOD", "20"),
+            bb_std=_f("TRADE_BB_STD", "2.0"),
+            donchian_period=_i("TRADE_DONCHIAN_PERIOD", "20"),
+            macd_fast=_i("TRADE_MACD_FAST", "12"),
+            macd_slow=_i("TRADE_MACD_SLOW", "26"),
+            macd_signal=_i("TRADE_MACD_SIGNAL", "9"),
             risk_per_trade=_f("TRADE_RISK_PER_TRADE", "0.01"),
             max_open_positions=_i("TRADE_MAX_POSITIONS", "3"),
             max_daily_loss_pct=_f("TRADE_MAX_DAILY_LOSS_PCT", "0.05"),
@@ -89,8 +103,12 @@ class TradingConfig:
     def validate(self) -> None:
         if self.mode not in ("paper", "live", "backtest"):
             raise ValueError(f"Невідомий TRADE_MODE: {self.mode}")
-        if self.ema_fast >= self.ema_slow:
+        if self.strategy not in ("ema_rsi", "macd", "bollinger", "donchian"):
+            raise ValueError(f"Невідома TRADE_STRATEGY: {self.strategy}")
+        if self.strategy == "ema_rsi" and self.ema_fast >= self.ema_slow:
             raise ValueError("EMA_FAST має бути меншим за EMA_SLOW")
+        if self.strategy == "macd" and self.macd_fast >= self.macd_slow:
+            raise ValueError("MACD_FAST має бути меншим за MACD_SLOW")
         if not (0 < self.risk_per_trade < 0.5):
             raise ValueError("RISK_PER_TRADE має бути в діапазоні (0, 0.5)")
         if not self.symbols:

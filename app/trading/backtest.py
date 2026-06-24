@@ -12,7 +12,7 @@ import sys
 from .config import TradingConfig
 from .market import Market
 from .risk import position_size
-from .strategy import Strategy
+from .strategy import make_strategy, warmup_bars
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ def fetch_history(market: Market, symbol: str, total: int) -> list[list[float]]:
 
 
 def run(cfg: TradingConfig, symbol: str, candles: list[list[float]]) -> dict:
-    strat = Strategy(cfg)
+    strat = make_strategy(cfg)
     cash = cfg.paper_balance
     position = None  # {"entry", "qty", "sl", "tp"}
     trades: list[dict] = []
@@ -50,7 +50,7 @@ def run(cfg: TradingConfig, symbol: str, candles: list[list[float]]) -> dict:
     peak = cash
     max_dd = 0.0
 
-    warmup = max(cfg.ema_slow, cfg.rsi_period, cfg.atr_period) + 2
+    warmup = warmup_bars(cfg)
 
     for i in range(warmup, len(candles)):
         high = candles[i][2]
@@ -112,6 +112,7 @@ def run(cfg: TradingConfig, symbol: str, candles: list[list[float]]) -> dict:
 
     return {
         "symbol": symbol,
+        "strategy": cfg.strategy,
         "candles": len(candles),
         "trades": len(trades),
         "win_rate": (len(wins) / len(trades) * 100) if trades else 0.0,
@@ -125,7 +126,7 @@ def run(cfg: TradingConfig, symbol: str, candles: list[list[float]]) -> dict:
 
 def _print(r: dict) -> None:
     print("=" * 48)
-    print(f"Бектест {r['symbol']} | свічок: {r['candles']}")
+    print(f"Бектест {r['symbol']} | стратегія: {r.get('strategy','?')} | свічок: {r['candles']}")
     print("-" * 48)
     print(f"Угод:                 {r['trades']}")
     print(f"Win rate:             {r['win_rate']:.1f}%")

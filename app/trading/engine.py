@@ -19,7 +19,7 @@ from .broker import make_broker
 from .config import TradingConfig
 from .market import Market
 from .notify import Notifier
-from .strategy import Strategy
+from .strategy import make_strategy
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class Engine:
         cfg.validate()
         self.cfg = cfg
         self.market = Market(cfg)
-        self.strategy = Strategy(cfg)
+        self.strategy = make_strategy(cfg)
         self.broker = make_broker(cfg, self.market)
         self.notifier = Notifier(cfg.notify)
         store.migrate_trading()
@@ -121,10 +121,11 @@ class Engine:
     # --- Безкінечний цикл ---
 
     def run_forever(self) -> None:
-        log.info("Старт торгового циклу: режим=%s біржа=%s символи=%s тф=%s",
-                 self.cfg.mode, self.cfg.exchange, self.cfg.symbols, self.cfg.timeframe)
+        log.info("Старт торгового циклу: режим=%s стратегія=%s біржа=%s символи=%s тф=%s",
+                 self.cfg.mode, self.cfg.strategy, self.cfg.exchange, self.cfg.symbols, self.cfg.timeframe)
         self.notifier.send(
             f"🤖 Торговий бот запущено\nРежим: <b>{self.cfg.mode}</b>\n"
+            f"Стратегія: {self.cfg.strategy}\n"
             f"Біржа: {self.cfg.exchange}\nПари: {', '.join(self.cfg.symbols)}\n"
             f"Таймфрейм: {self.cfg.timeframe}"
         )

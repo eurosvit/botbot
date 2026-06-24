@@ -82,3 +82,60 @@ def atr(highs: list[float], lows: list[float], closes: list[float], period: int 
         prev = (prev * (period - 1) + trs[i]) / period
         out[i] = prev
     return out
+
+
+def rolling_std(values: list[float], period: int) -> list[float | None]:
+    """Ковзне стандартне відхилення (популяційне) — для смуг Боллінджера."""
+    import math
+    out: list[float | None] = [None] * len(values)
+    if period <= 0 or len(values) < period:
+        return out
+    for i in range(period - 1, len(values)):
+        window = values[i - period + 1:i + 1]
+        m = sum(window) / period
+        var = sum((x - m) ** 2 for x in window) / period
+        out[i] = math.sqrt(var)
+    return out
+
+
+def bollinger(closes: list[float], period: int = 20, num_std: float = 2.0):
+    """Смуги Боллінджера: (середня, верхня, нижня)."""
+    mid = sma(closes, period)
+    sd = rolling_std(closes, period)
+    upper = [(mid[i] + num_std * sd[i]) if mid[i] is not None and sd[i] is not None else None
+             for i in range(len(closes))]
+    lower = [(mid[i] - num_std * sd[i]) if mid[i] is not None and sd[i] is not None else None
+             for i in range(len(closes))]
+    return mid, upper, lower
+
+
+def donchian(highs: list[float], lows: list[float], period: int = 20):
+    """Канал Дончіана за ПОПЕРЕДНІ `period` свічок (без поточної) — для пробоїв.
+
+    Повертає (верхня_межа, нижня_межа): максимум/мінімум попереднього вікна,
+    тож умова пробою — close[i] > upper[i].
+    """
+    n = len(highs)
+    up: list[float | None] = [None] * n
+    lo: list[float | None] = [None] * n
+    for i in range(period, n):
+        up[i] = max(highs[i - period:i])
+        lo[i] = min(lows[i - period:i])
+    return up, lo
+
+
+def macd(closes: list[float], fast: int = 12, slow: int = 26, signal: int = 9):
+    """MACD: (лінія MACD, сигнальна лінія, гістограма)."""
+    ef = ema(closes, fast)
+    es = ema(closes, slow)
+    macd_line = [(ef[i] - es[i]) if ef[i] is not None and es[i] is not None else None
+                 for i in range(len(closes))]
+    sig: list[float | None] = [None] * len(closes)
+    valid = [(i, v) for i, v in enumerate(macd_line) if v is not None]
+    if len(valid) >= signal:
+        sig_vals = ema([v for _, v in valid], signal)
+        for (idx, _), sv in zip(valid, sig_vals):
+            sig[idx] = sv
+    hist = [(macd_line[i] - sig[i]) if macd_line[i] is not None and sig[i] is not None else None
+            for i in range(len(closes))]
+    return macd_line, sig, hist

@@ -11,8 +11,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.trading import indicators as ind
 from app.trading.config import TradingConfig
 from app.trading.risk import position_size, daily_loss_exceeded
-from app.trading.strategy import Strategy
-from app.trading import backtest
+from app.trading.strategy import make_strategy, warmup_bars, STRATEGIES
+from app.trading import backtest, optimize
 
 PASS = 0
 FAIL = 0
@@ -47,6 +47,17 @@ def test_indicators():
     lows = [c - 1 for c in closes]
     a = ind.atr(highs, lows, closes, 14)
     check("atr додатній", a[-1] is not None and a[-1] > 0)
+
+    mid, up, lo = ind.bollinger(closes, 5, 2.0)
+    check("bollinger: верхня > середня > нижня",
+          up[-1] is not None and up[-1] > mid[-1] > lo[-1])
+
+    dup, dlo = ind.donchian(highs, lows, 5)
+    check("donchian: верхня >= нижня", dup[-1] is not None and dup[-1] >= dlo[-1])
+
+    line, sigl, hist = ind.macd(closes, 3, 6, 3)
+    check("macd: усі лінії визначені в кінці",
+          line[-1] is not None and sigl[-1] is not None and hist[-1] is not None)
 
 
 def test_risk():
@@ -89,7 +100,7 @@ def test_strategy_and_backtest():
     cfg.rsi_overbought = 95
     candles = _synthetic_trend(400)
 
-    strat = Strategy(cfg)
+    strat = make_strategy(cfg)
     sig = strat.evaluate(candles)
     check("сигнал має валідний action", sig.action in ("buy", "sell", "hold"))
     check("ATR порахований у сигналі", sig.atr is not None)
@@ -101,8 +112,44 @@ def test_strategy_and_backtest():
     check("бектест повертає число угод", isinstance(res["trades"], int))
     check("фінальний баланс додатній", res["final_balance"] > 0)
     check("просадка в [0,100]", 0 <= res["max_drawdown_pct"] <= 100)
-    print(f"    -> угод={res['trades']} дохідність={res['total_return_pct']:+.2f}% "
+    print(f"    -> [{cfg.strategy}] угод={res['trades']} дохідність={res['total_return_pct']:+.2f}% "
           f"B&H={res['buy_hold_return_pct']:+.2f}% DD={res['max_drawdown_pct']:.2f}%")
+
+
+def test_all_strategies():
+    print("усі стратегії:")
+    candles = _synthetic_trend(400)
+    for name in STRATEGIES:
+        cfg = TradingConfig.from_env()
+        cfg.mode = "backtest"
+        cfg.strategy = name
+        cfg.rsi_overbought = 95
+        strat = make_strategy(cfg)
+        sig = strat.evaluate(candles)
+        ok = sig.action in ("buy", "sell", "hold")
+        res = backtest.run(cfg, "TEST/USDT", candles)
+        ok = ok and res["final_balance"] > 0 and isinstance(res["trades"], int)
+        check(f"{name}: оцінка + бектест ок", ok)
+        print(f"    -> [{name}] угод={res['trades']} дохідність={res['total_return_pct']:+.2f}% "
+              f"DD={res['max_drawdown_pct']:.2f}%")
+
+
+def test_optimizer():
+    print("оптимізатор:")
+    cfg = TradingConfig.from_env()
+    cfg.mode = "backtest"
+    cfg.strategy = "macd"   # на синтетиці дає достатньо угод для оцінки
+    candles = _synthetic_trend(500)
+    results = optimize.optimize(cfg, "TEST/USDT", candles, top=5)
+    check("оптимізатор повертає результати", len(results) > 0)
+    check("результати відсортовані за score (спадання)",
+          all(results[i]["score"] >= results[i + 1]["score"] for i in range(len(results) - 1)))
+    check("кожен результат має параметри", all("params" in r for r in results))
+    check("знайдено хоча б одну надійну комбінацію (score скінченний)",
+          results[0]["score"] != float("-inf"))
+    best = results[0]
+    print(f"    -> найкраще: score={best['score']:.2f} ret={best['total_return_pct']:+.2f}% "
+          f"угод={best['trades']} params={best['params']}")
 
 
 def main():
@@ -112,6 +159,8 @@ def main():
     test_indicators()
     test_risk()
     test_strategy_and_backtest()
+    test_all_strategies()
+    test_optimizer()
     print("-" * 50)
     print(f"Результат: {PASS} пройдено, {FAIL} провалено")
     sys.exit(1 if FAIL else 0)
