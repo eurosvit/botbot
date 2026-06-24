@@ -12,7 +12,7 @@ from app.trading import indicators as ind
 from app.trading.config import TradingConfig
 from app.trading.risk import position_size, daily_loss_exceeded, pnl
 from app.trading.strategy import make_strategy, warmup_bars, STRATEGIES
-from app.trading import backtest, optimize
+from app.trading import backtest, optimize, report
 
 PASS = 0
 FAIL = 0
@@ -174,6 +174,18 @@ def test_futures_shorts():
           f"DD={res['max_drawdown_pct']:.2f}%")
 
 
+def test_report():
+    print("звіт:")
+    cfg = TradingConfig.from_env()
+    cfg.mode = "backtest"
+    candles = _synthetic_trend(450)
+    results = report.run_for_symbol(cfg, "TEST/USDT", candles)
+    check("звіт покриває всі стратегії", len(results) == len(STRATEGIES))
+    check("звіт відсортований за дохідністю (спадання)",
+          all(results[i]["total_return_pct"] >= results[i + 1]["total_return_pct"]
+              for i in range(len(results) - 1)))
+
+
 def test_optimizer():
     print("оптимізатор:")
     cfg = TradingConfig.from_env()
@@ -201,6 +213,7 @@ def main():
     test_strategy_and_backtest()
     test_all_strategies()
     test_futures_shorts()
+    test_report()
     test_optimizer()
     print("-" * 50)
     print(f"Результат: {PASS} пройдено, {FAIL} провалено")
