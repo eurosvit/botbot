@@ -71,7 +71,7 @@ DASHBOARD_HTML = r"""<!doctype html>
         <option value="spot">spot (long)</option>
         <option value="swap">swap (long+short)</option>
       </select>
-      <input id="optCandles" type="number" value="800" title="к-сть свічок" style="width:90px">
+      <input id="optCandles" type="number" value="400" title="к-сть свічок" style="width:90px">
       <button id="optBtn" onclick="runOptimize()">Підібрати ▶</button>
       <span class="muted" id="optStatus"></span>
     </div>

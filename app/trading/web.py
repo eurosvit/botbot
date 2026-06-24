@@ -132,6 +132,32 @@ def trades_json():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@bp.route("/check", methods=["GET"])
+def check():
+    """Швидка діагностика: чи доступні дані з біржі (тягне поточні ціни)."""
+    from .market import Market
+    try:
+        cfg = TradingConfig.from_env()
+        m = Market(cfg)
+        prices = {}
+        for s in cfg.symbols:
+            try:
+                prices[s] = m.last_price(s)
+            except Exception as e:
+                prices[s] = f"error: {str(e)[:160]}"
+        ok = any(isinstance(v, (int, float)) for v in prices.values())
+        return jsonify({
+            "ok": ok,
+            "exchange": cfg.exchange,
+            "market_type": cfg.market_type,
+            "timeframe": cfg.timeframe,
+            "prices": prices,
+        })
+    except Exception as e:
+        log.exception("check error")
+        return jsonify({"ok": False, "message": str(e)}), 500
+
+
 @bp.route("/optimize.json", methods=["GET"])
 def optimize_json():
     """Запускає grid-search оптимізацію в браузері та повертає ТОП-комбінацій.
