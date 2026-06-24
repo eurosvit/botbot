@@ -3,7 +3,7 @@ import logging
 from app.db import migrate
 migrate()
 
-from flask import Flask, Response, request
+from flask import Flask, Response, request, redirect
 from app.logging_conf import configure_logging
 from app.telegram import Telegram
 from app.trading.web import bp as trading_bp
@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 
 # Торговий модуль: read-only моніторинг + ручний запуск проходу циклу.
 app.register_blueprint(trading_bp)
+
+@app.route("/")
+def index():
+    # Зручний редірект з кореня на торговий дашборд.
+    return redirect("/trading/dashboard")
 
 @app.route("/daily_report", methods=["POST", "GET"])
 def daily_report():
