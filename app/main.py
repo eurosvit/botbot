@@ -1,15 +1,21 @@
+import logging
+
 from app.db import migrate
 migrate()
 
 from flask import Flask, Response, request
 from app.logging_conf import configure_logging
 from app.telegram import Telegram
+from app.trading.web import bp as trading_bp
 from collect_data import collect_daily_data
 from generate_report import format_daily_report
 
 app = Flask(__name__)
 configure_logging()
 logger = logging.getLogger(__name__)
+
+# Торговий модуль: read-only моніторинг + ручний запуск проходу циклу.
+app.register_blueprint(trading_bp)
 
 @app.route("/daily_report", methods=["POST", "GET"])
 def daily_report():
