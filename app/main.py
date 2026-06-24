@@ -22,6 +22,15 @@ def index():
     # Зручний редірект з кореня на торговий дашборд.
     return redirect("/trading/dashboard")
 
+_FAVICON = (
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>"
+    "<text y='.9em' font-size='90'>📈</text></svg>"
+)
+
+@app.route("/favicon.ico")
+def favicon():
+    return Response(_FAVICON, mimetype="image/svg+xml")
+
 @app.route("/daily_report", methods=["POST", "GET"])
 def daily_report():
     logger.info("Daily report requested")
