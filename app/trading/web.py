@@ -132,6 +132,22 @@ def trades_json():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@bp.route("/test-notify", methods=["GET"])
+def test_notify():
+    """Надсилає тестове повідомлення в Telegram — перевірка налаштувань сповіщень."""
+    from .notify import Notifier
+    try:
+        n = Notifier(enabled=True)
+        if n.tg is None:
+            return jsonify({"ok": False,
+                            "message": "Telegram не налаштований — перевір TG_BOT_TOKEN і TG_CHAT_ID"}), 400
+        n.send("✅ Торговий бот на зв'язку. Сповіщення працюють.")
+        return jsonify({"ok": True, "message": "повідомлення надіслано"})
+    except Exception as e:
+        log.exception("test-notify error")
+        return jsonify({"ok": False, "message": str(e)}), 500
+
+
 @bp.route("/check", methods=["GET"])
 def check():
     """Швидка діагностика: чи доступні дані з біржі (тягне поточні ціни)."""
