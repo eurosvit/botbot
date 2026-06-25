@@ -22,11 +22,14 @@ log = logging.getLogger(__name__)
 
 
 class PaperBroker:
+    """Симуляція на реальних цінах. Стан (баланс) повністю виводиться з БД, тож
+    переживає перезапуски: cash і equity рахуються з реалізованого PnL та
+    відкритих позицій, а не з лічильника в пам'яті."""
+
     def __init__(self, cfg: TradingConfig, market: Market):
         self.cfg = cfg
         self.market = market
         self.mode = "paper"
-        self.cash = cfg.paper_balance
 
     def _price(self, symbol: str, fallback: float) -> float:
         try:
@@ -34,35 +37,41 @@ class PaperBroker:
         except Exception:
             return fallback
 
+    def _realized_balance(self) -> float:
+        """Стартовий баланс + увесь реалізований PnL."""
+        return self.cfg.paper_balance + store.realized_pnl_total(self.mode)
+
+    def _reserved(self, qty: float, entry: float) -> float:
+        """Скільки балансу «зайнято» позицією: для spot — повна вартість, для swap — маржа."""
+        if self.cfg.market_type == "swap":
+            return qty * entry / max(self.cfg.leverage, 1)
+        return qty * entry
+
+    @property
+    def cash(self) -> float:
+        """Вільні гроші = реалізований баланс − зайняте відкритими позиціями."""
+        reserved = sum(self._reserved(float(p["qty"]), float(p["entry_price"]))
+                       for p in store.open_positions(self.mode))
+        return self._realized_balance() - reserved
+
     def equity(self) -> float:
-        total = self.cash
+        """Капітал = реалізований баланс + нереалізований PnL відкритих позицій."""
+        total = self._realized_balance()
         for p in store.open_positions(self.mode):
-            qty = float(p["qty"])
-            entry = float(p["entry_price"])
-            side = p["side"]
-            price = self._price(p["symbol"], entry)
-            if self.cfg.market_type == "swap":
-                margin = qty * entry / max(self.cfg.leverage, 1)
-                total += margin + risk.pnl(side, entry, price, qty)
-            else:  # spot long: ринкова вартість активу
-                total += qty * price
+            qty, entry, side = float(p["qty"]), float(p["entry_price"]), p["side"]
+            total += risk.pnl(side, entry, self._price(p["symbol"], entry), qty)
         return total
 
     def open(self, symbol, side, qty, price, sl, tp, reason) -> int | None:
         if qty <= 0:
             return None
-        if self.cfg.market_type == "swap":
-            margin = qty * price / max(self.cfg.leverage, 1)
-            if margin > self.cash:
-                log.warning("paper open відхилено: margin=%.2f cash=%.2f", margin, self.cash)
-                return None
-            self.cash -= margin
-        else:  # spot — лише long, повна вартість
-            cost = qty * price
-            if side != "long" or cost > self.cash:
-                log.warning("paper open відхилено: side=%s cost=%.2f cash=%.2f", side, cost, self.cash)
-                return None
-            self.cash -= cost
+        if self.cfg.market_type != "swap" and side != "long":
+            log.warning("paper open відхилено: short доступний лише на swap")
+            return None
+        need = self._reserved(qty, price)
+        if need > self.cash + 1e-9:
+            log.warning("paper open відхилено: треба=%.2f, готівка=%.2f", need, self.cash)
+            return None
         pos_id = store.open_position({
             "mode": self.mode, "exchange": self.cfg.exchange, "symbol": symbol,
             "side": side, "qty": qty, "entry_price": price,
@@ -77,11 +86,6 @@ class PaperBroker:
         entry = float(pos["entry_price"])
         side = pos["side"]
         p = risk.pnl(side, entry, price, qty)
-        if self.cfg.market_type == "swap":
-            margin = qty * entry / max(self.cfg.leverage, 1)
-            self.cash += margin + p
-        else:  # spot long: повертаємо виручку
-            self.cash += qty * price
         pnl_pct = (p / (qty * entry) * 100.0) if entry and qty else 0.0
         store.close_position(pos["id"], price, p, pnl_pct, reason)
         log.info("PAPER CLOSE %s %s qty=%.6f @ %.2f pnl=%.2f (%.2f%%)",

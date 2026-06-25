@@ -147,6 +147,17 @@ def daily_stats(mode: str) -> dict:
     }
 
 
+def realized_pnl_total(mode: str) -> float:
+    """Сума реалізованого PnL за всіма закритими угодами (для розрахунку балансу)."""
+    eng = get_engine()
+    with eng.begin() as c:
+        v = c.execute(text("""
+            SELECT COALESCE(SUM(pnl), 0) FROM trade_positions
+             WHERE status='closed' AND mode=:mode
+        """), {"mode": mode}).scalar_one()
+        return float(v or 0.0)
+
+
 def realized_pnl_today(mode: str) -> float:
     """Сума реалізованого PnL за сьогодні (для денного стоп-ліміту)."""
     eng = get_engine()
