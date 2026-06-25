@@ -131,7 +131,6 @@ function renderCards(st, eq) {
   const retPct = (start && cur) ? (cur/start-1)*100 : null;
   const cards = [
     {label:"Капітал", value: fmt(cur), c:""},
-    {label:"Готівка", value: fmt(st.cash), c:""},
     {label:"Дохідність", value: retPct===null?"—":(retPct>0?"+":"")+fmt(retPct)+"%", c:cls(retPct)},
     {label:"PnL сьогодні", value:(st.pnl_today>0?"+":"")+fmt(st.pnl_today), c:cls(st.pnl_today)},
     {label:"Реалізований PnL", value:(st.total_realized_pnl>0?"+":"")+fmt(st.total_realized_pnl), c:cls(st.total_realized_pnl)},
