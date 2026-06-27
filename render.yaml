@@ -29,7 +29,7 @@ services:
       - key: TRADE_TIMEFRAME
         value: 15m
       - key: TRADE_STRATEGY
-        value: ema_rsi
+        value: macd                # активніша за ema_rsi: входить на кожному кросовері MACD
       - key: TRADE_PAPER_BALANCE
         value: "1000"
       - key: TRADE_RISK_PER_TRADE
