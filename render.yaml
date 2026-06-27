@@ -11,7 +11,7 @@ services:
   - type: web
     name: trader-mvp
     runtime: python
-    plan: free
+    plan: starter              # платний план (узгоджено з апгрейдом сервісу)
     branch: claude/trading-service-mvp-tcrrer
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app.main:app
