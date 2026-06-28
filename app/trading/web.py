@@ -69,6 +69,7 @@ def status():
             "pnl_today": store.realized_pnl_today(mode),
             "closed_trades": int(closed["n"]),
             "total_realized_pnl": float(closed["pnl"]),
+            "last_run": last_eq["ts"].isoformat() if last_eq else None,
         })
     except Exception as e:
         log.exception("trading status error")

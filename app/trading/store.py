@@ -147,6 +147,15 @@ def daily_stats(mode: str) -> dict:
     }
 
 
+def last_equity_ts(mode: str):
+    """Час останнього знімка капіталу (= час останнього проходу циклу)."""
+    eng = get_engine()
+    with eng.begin() as c:
+        return c.execute(text("""
+            SELECT ts FROM trade_equity WHERE mode=:mode ORDER BY ts DESC LIMIT 1
+        """), {"mode": mode}).scalar_one_or_none()
+
+
 def realized_pnl_total(mode: str) -> float:
     """Сума реалізованого PnL за всіма закритими угодами (для розрахунку балансу)."""
     eng = get_engine()
