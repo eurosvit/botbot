@@ -35,4 +35,4 @@ services:
       - key: TRADE_RISK_PER_TRADE
         value: "0.01"
       - key: TRADE_NOTIFY
-        value: "false"             # увімкни true + додай TG_BOT_TOKEN/TG_CHAT_ID для сповіщень
+        value: "true"              # сповіщення про угоди в Telegram (потрібні TG_BOT_TOKEN/TG_CHAT_ID)
