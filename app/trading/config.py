@@ -57,6 +57,8 @@ class TradingConfig:
     macd_fast: int
     macd_slow: int
     macd_signal: int
+    use_trend_filter: bool        # входити лише ЗА трендом (фільтр від хибних сигналів)
+    trend_ema: int                # період довгої EMA для визначення тренду
 
     # --- Ризик-менеджмент ---
     risk_per_trade: float         # частка капіталу під ризиком на угоду (0.01 = 1%)
@@ -98,11 +100,13 @@ class TradingConfig:
             macd_fast=_i("TRADE_MACD_FAST", "12"),
             macd_slow=_i("TRADE_MACD_SLOW", "26"),
             macd_signal=_i("TRADE_MACD_SIGNAL", "9"),
+            use_trend_filter=_b("TRADE_TREND_FILTER", "true"),
+            trend_ema=_i("TRADE_TREND_EMA", "200"),
             risk_per_trade=_f("TRADE_RISK_PER_TRADE", "0.01"),
             max_open_positions=_i("TRADE_MAX_POSITIONS", "3"),
             max_daily_loss_pct=_f("TRADE_MAX_DAILY_LOSS_PCT", "0.05"),
             poll_seconds=_i("TRADE_POLL_SECONDS", "60"),
-            candle_limit=_i("TRADE_CANDLE_LIMIT", "200"),
+            candle_limit=_i("TRADE_CANDLE_LIMIT", "300"),
             notify=_b("TRADE_NOTIFY", "true"),
         )
 

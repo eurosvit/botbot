@@ -202,8 +202,30 @@ def make_strategy(cfg: TradingConfig) -> BaseStrategy:
 
 def warmup_bars(cfg: TradingConfig) -> int:
     """Скільки свічок потрібно «розігріву», щоб усі індикатори були визначені."""
+    trend = cfg.trend_ema if cfg.use_trend_filter else 0
     return max(cfg.ema_slow, cfg.rsi_period, cfg.atr_period, cfg.bb_period,
-              cfg.donchian_period, cfg.macd_slow + cfg.macd_signal) + 2
+              cfg.donchian_period, cfg.macd_slow + cfg.macd_signal, trend) + 2
+
+
+def trend_direction(cfg: TradingConfig, closes: list[float]) -> list:
+    """Напрям тренду по кожній свічці: 'up' якщо ціна вище довгої EMA, інакше 'down' (None — мало даних)."""
+    if not cfg.use_trend_filter:
+        return [None] * len(closes)
+    te = ind.ema(closes, cfg.trend_ema)
+    out = []
+    for i in range(len(closes)):
+        if te[i] is None:
+            out.append(None)
+        else:
+            out.append("up" if closes[i] > te[i] else "down")
+    return out
+
+
+def entry_allowed(cfg: TradingConfig, trend: str | None, side: str) -> bool:
+    """Чи дозволено вхід за фільтром тренду (long лише в up-тренді, short — у down)."""
+    if not cfg.use_trend_filter or trend is None:
+        return True
+    return trend == ("up" if side == "long" else "down")
 
 
 # Зворотна сумісність: Strategy == стратегія за замовчуванням.

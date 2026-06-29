@@ -12,7 +12,7 @@ import sys
 from .config import TradingConfig
 from .market import Market
 from .risk import position_size, pnl
-from .strategy import make_strategy, warmup_bars
+from .strategy import make_strategy, warmup_bars, trend_direction, entry_allowed
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +55,7 @@ def run(cfg: TradingConfig, symbol: str, candles: list[list[float]]) -> dict:
     highs = [c[2] for c in candles]
     lows = [c[3] for c in candles]
     inddata = strat.indicators(closes, highs, lows)
+    trend = trend_direction(cfg, closes)  # напрям тренду по кожній свічці
 
     def close_pos(exit_price: float, reason: str) -> None:
         nonlocal cash, position
@@ -94,6 +95,8 @@ def run(cfg: TradingConfig, symbol: str, candles: list[list[float]]) -> dict:
         # 3) Входи: buy → long; sell → short (якщо дозволено).
         if position is None:
             side = "long" if signal.action == "buy" else ("short" if signal.action == "sell" and cfg.allow_shorts else None)
+            if side and not entry_allowed(cfg, trend[i], side):
+                side = None  # вхід проти тренду — пропускаємо
             if side:
                 sl, tp = signal.levels(cfg, side)
                 if sl:

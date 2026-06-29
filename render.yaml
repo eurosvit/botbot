@@ -27,7 +27,7 @@ services:
       - key: TRADE_SYMBOLS
         value: BTC/USDT,ETH/USDT
       - key: TRADE_TIMEFRAME
-        value: 15m
+        value: 1h                  # вищий таймфрейм = менше шуму/хибних сигналів
       - key: TRADE_STRATEGY
         value: macd                # активніша за ema_rsi: входить на кожному кросовері MACD
       - key: TRADE_PAPER_BALANCE

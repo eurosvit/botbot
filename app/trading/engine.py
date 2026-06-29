@@ -19,7 +19,7 @@ from .broker import make_broker
 from .config import TradingConfig
 from .market import Market
 from .notify import Notifier
-from .strategy import make_strategy
+from .strategy import make_strategy, trend_direction, entry_allowed, warmup_bars
 
 log = logging.getLogger(__name__)
 
@@ -58,8 +58,8 @@ class Engine:
 
     def _process_symbol(self, symbol, position, equity, cash, open_count, entries_blocked):
         candles = self.market.fetch_ohlcv(symbol)
-        if len(candles) < self.cfg.ema_slow + 2:
-            log.info("%s: замало свічок", symbol)
+        if len(candles) < warmup_bars(self.cfg) + 2:
+            log.info("%s: замало свічок (%d)", symbol, len(candles))
             return
         # Остання свічка може бути ще незакритою — відкидаємо для сигналу.
         closed = candles[:-1]
@@ -85,6 +85,12 @@ class Engine:
             return
         if open_count >= self.cfg.max_open_positions:
             log.info("%s: ліміт відкритих позицій (%d)", symbol, self.cfg.max_open_positions)
+            return
+
+        # Фільтр тренду: входимо лише за напрямом довгої EMA.
+        trend = trend_direction(self.cfg, [c[4] for c in closed])[-1]
+        if not entry_allowed(self.cfg, trend, side):
+            log.info("%s: вхід %s заблоковано фільтром тренду (%s)", symbol, side, trend)
             return
 
         sl, tp = signal.levels(self.cfg, side)

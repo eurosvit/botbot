@@ -186,6 +186,25 @@ def test_daily_summary_format():
           "Сьогодні: 0 угод" in format_daily_summary({**stats, "trades_today": 0, "wins_today": 0}, cfg, "x"))
 
 
+def test_trend_filter():
+    print("фільтр тренду:")
+    from app.trading.strategy import entry_allowed, trend_direction
+    cfg = TradingConfig.from_env()
+    cfg.use_trend_filter = True
+    check("long дозволено в up-тренді", entry_allowed(cfg, "up", "long") is True)
+    check("long заблоковано в down-тренді", entry_allowed(cfg, "down", "long") is False)
+    check("short дозволено в down-тренді", entry_allowed(cfg, "down", "short") is True)
+    check("без даних тренду — дозволено", entry_allowed(cfg, None, "long") is True)
+    cfg.use_trend_filter = False
+    check("вимкнений фільтр — завжди дозволено", entry_allowed(cfg, "down", "long") is True)
+
+    cfg.use_trend_filter = True
+    cfg.trend_ema = 20
+    closes = [100 + i for i in range(60)]  # стабільний ап-тренд
+    td = trend_direction(cfg, closes)
+    check("trend_direction дає 'up' на висхідному ряді", td[-1] == "up")
+
+
 def test_report():
     print("звіт:")
     cfg = TradingConfig.from_env()
@@ -226,6 +245,7 @@ def main():
     test_all_strategies()
     test_futures_shorts()
     test_daily_summary_format()
+    test_trend_filter()
     test_report()
     test_optimizer()
     print("-" * 50)
