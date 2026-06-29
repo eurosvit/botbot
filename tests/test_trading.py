@@ -205,6 +205,24 @@ def test_trend_filter():
     check("trend_direction дає 'up' на висхідному ряді", td[-1] == "up")
 
 
+def test_tuner_overrides():
+    print("авто-тюнінг (apply_overrides):")
+    from app.trading.tuner import apply_overrides
+    from app.trading import store as _store
+    # підміняємо get_overrides, щоб не чіпати БД
+    orig = _store.get_overrides
+    _store.get_overrides = lambda: {"strategy": "macd", "atr_sl_mult": "2.0", "macd_fast": "8", "_x": "ignore"}
+    try:
+        cfg = TradingConfig.from_env()
+        out = apply_overrides(cfg)
+        check("override стратегії застосовано", out.strategy == "macd")
+        check("override float застосовано", abs(out.atr_sl_mult - 2.0) < 1e-9)
+        check("override int застосовано", out.macd_fast == 8)
+        check("інші поля не змінились", out.ema_slow == cfg.ema_slow)
+    finally:
+        _store.get_overrides = orig
+
+
 def test_report():
     print("звіт:")
     cfg = TradingConfig.from_env()
@@ -246,6 +264,7 @@ def main():
     test_futures_shorts()
     test_daily_summary_format()
     test_trend_filter()
+    test_tuner_overrides()
     test_report()
     test_optimizer()
     print("-" * 50)

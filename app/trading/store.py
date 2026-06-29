@@ -39,8 +39,18 @@ def migrate_trading() -> None:
                 closed_at TIMESTAMPTZ
             )
         """))
+        c.execute(text("ALTER TABLE trade_positions ADD COLUMN IF NOT EXISTS strategy TEXT"))
         c.execute(text("CREATE INDEX IF NOT EXISTS idx_pos_status ON trade_positions(status)"))
         c.execute(text("CREATE INDEX IF NOT EXISTS idx_pos_symbol ON trade_positions(symbol)"))
+
+        # Авто-параметри (override поверх env) — для самонавчання (авто-тюнінгу).
+        c.execute(text("""
+            CREATE TABLE IF NOT EXISTS trade_config (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """))
 
         c.execute(text("""
             CREATE TABLE IF NOT EXISTS trade_equity (
@@ -61,10 +71,10 @@ def open_position(p: dict) -> int:
         row = c.execute(text("""
             INSERT INTO trade_positions
                 (mode, exchange, symbol, side, qty, entry_price, stop_loss, take_profit,
-                 status, reason_open, opened_at)
+                 status, reason_open, strategy, opened_at)
             VALUES
                 (:mode, :exchange, :symbol, :side, :qty, :entry_price, :stop_loss, :take_profit,
-                 'open', :reason_open, :opened_at)
+                 'open', :reason_open, :strategy, :opened_at)
             RETURNING id
         """), p)
         return int(row.scalar_one())
@@ -145,6 +155,66 @@ def daily_stats(mode: str) -> dict:
         "trades_total": int(total["n"]),
         "pnl_total": float(total["pnl"]),
     }
+
+
+def save_overrides(overrides: dict) -> None:
+    """Зберігає авто-підібрані параметри (override поверх env)."""
+    eng = get_engine()
+    with eng.begin() as c:
+        for k, v in overrides.items():
+            c.execute(text("""
+                INSERT INTO trade_config (key, value, updated_at)
+                VALUES (:k, :v, NOW())
+                ON CONFLICT (key) DO UPDATE SET value=:v, updated_at=NOW()
+            """), {"k": k, "v": str(v)})
+
+
+def get_overrides() -> dict:
+    """Повертає збережені авто-параметри (без службових ключів)."""
+    eng = get_engine()
+    with eng.begin() as c:
+        rows = c.execute(text("SELECT key, value FROM trade_config")).mappings().all()
+    return {r["key"]: r["value"] for r in rows if not r["key"].startswith("_")}
+
+
+def overrides_updated_at(key: str = "strategy"):
+    """Коли востаннє оновлювалися авто-параметри (для запобіжника частих перезапусків тюнінгу)."""
+    eng = get_engine()
+    with eng.begin() as c:
+        return c.execute(text("SELECT updated_at FROM trade_config WHERE key=:k"),
+                         {"k": key}).scalar_one_or_none()
+
+
+def due(key: str, min_seconds: int) -> bool:
+    """Атомарний «таймер»: True (і оновлює мітку), якщо від останнього разу минуло >= min_seconds.
+    Захищає тижневі задачі від дублювання між воркерами gunicorn."""
+    eng = get_engine()
+    with eng.begin() as c:
+        row = c.execute(text("""
+            INSERT INTO trade_config (key, value, updated_at)
+            VALUES (:k, '1', NOW())
+            ON CONFLICT (key) DO UPDATE SET updated_at = NOW()
+              WHERE trade_config.updated_at < NOW() - make_interval(secs => :s)
+            RETURNING key
+        """), {"k": key, "s": min_seconds}).scalar_one_or_none()
+        return row is not None
+
+
+def performance_breakdown(mode: str) -> list[dict]:
+    """Розбивка закритих угод за стратегією та парою — для само-аналізу."""
+    eng = get_engine()
+    with eng.begin() as c:
+        rows = c.execute(text("""
+            SELECT COALESCE(strategy, '?') AS strategy, symbol,
+                   COUNT(*) AS n,
+                   COALESCE(SUM(pnl), 0) AS pnl,
+                   COALESCE(SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END), 0) AS wins
+              FROM trade_positions
+             WHERE status='closed' AND mode=:mode
+             GROUP BY COALESCE(strategy, '?'), symbol
+             ORDER BY pnl DESC
+        """), {"mode": mode}).mappings().all()
+        return [dict(r) for r in rows]
 
 
 def last_equity_ts(mode: str):

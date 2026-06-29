@@ -50,6 +50,38 @@ def _scheduled_cycle():
         logger.exception("scheduled cycle failed")
 
 
+def _scheduled_autotune():
+    """Раз на тиждень: авто-тюнінг параметрів на свіжих даних (із дедуплікацією між воркерами)."""
+    try:
+        from app.trading import store
+        if not store.due("_autotune", 6 * 24 * 3600):   # не частіше ~разу на тиждень
+            return
+        from app.trading.config import TradingConfig
+        from app.trading.tuner import autotune, format_autotune
+        from app.trading.notify import Notifier
+        result = autotune(TradingConfig.from_env())
+        Notifier(enabled=True).send(format_autotune(result))
+        logger.info("autotune: %s", result)
+    except Exception:
+        logger.exception("scheduled autotune failed")
+
+
+def _scheduled_review():
+    """Раз на тиждень: само-аналіз результатів у Telegram."""
+    try:
+        from app.trading import store
+        if not store.due("_review", 6 * 24 * 3600):
+            return
+        from app.trading.config import TradingConfig
+        from app.trading.tuner import performance_review
+        from app.trading.notify import Notifier
+        n = Notifier(enabled=True)
+        if n.tg is not None:
+            n.send(performance_review(TradingConfig.from_env().mode))
+    except Exception:
+        logger.exception("scheduled review failed")
+
+
 if os.getenv("TRADE_SCHEDULER", "true").strip().lower() in ("1", "true", "yes", "on"):
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
@@ -57,6 +89,11 @@ if os.getenv("TRADE_SCHEDULER", "true").strip().lower() in ("1", "true", "yes", 
         _sched = BackgroundScheduler(timezone="UTC")
         _sched.add_job(_scheduled_cycle, "interval", seconds=_interval,
                        max_instances=1, coalesce=True, id="trade_cycle")
+        # Самовдосконалення: щотижневий авто-тюнінг та розбір (перевірка щодоби, запуск ~раз на тиждень).
+        _sched.add_job(_scheduled_autotune, "interval", hours=24,
+                       max_instances=1, coalesce=True, id="autotune")
+        _sched.add_job(_scheduled_review, "interval", hours=24,
+                       max_instances=1, coalesce=True, id="review")
         _sched.start()
         logger.info("Внутрішній планувальник торгівлі запущено (кожні %s c)", _interval)
     except Exception:

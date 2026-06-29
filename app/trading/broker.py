@@ -76,7 +76,7 @@ class PaperBroker:
             "mode": self.mode, "exchange": self.cfg.exchange, "symbol": symbol,
             "side": side, "qty": qty, "entry_price": price,
             "stop_loss": sl, "take_profit": tp, "reason_open": reason,
-            "opened_at": _now(),
+            "strategy": self.cfg.strategy, "opened_at": _now(),
         })
         log.info("PAPER OPEN %s %s qty=%.6f @ %.2f (id=%s)", side, symbol, qty, price, pos_id)
         return pos_id
@@ -132,7 +132,7 @@ class LiveBroker:
             "mode": self.mode, "exchange": self.cfg.exchange, "symbol": symbol,
             "side": side, "qty": filled, "entry_price": fill,
             "stop_loss": sl, "take_profit": tp, "reason_open": reason,
-            "opened_at": _now(),
+            "strategy": self.cfg.strategy, "opened_at": _now(),
         })
         log.info("LIVE OPEN %s %s qty=%.6f @ %.2f (id=%s)", side, symbol, filled, fill, pos_id)
         return pos_id

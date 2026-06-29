@@ -179,6 +179,46 @@ def daily_summary():
         return jsonify({"ok": False, "message": str(e)}), 500
 
 
+@bp.route("/autotune", methods=["GET", "POST"])
+def autotune_route():
+    """Авто-тюнінг: підбирає й застосовує кращу конфігурацію на свіжих даних."""
+    expected = os.getenv("TRADE_RUN_TOKEN")
+    if expected and request.args.get("token") != expected:
+        return jsonify({"status": "error", "message": "unauthorized"}), 401
+    from .tuner import autotune, format_autotune
+    from .notify import Notifier
+    try:
+        store.migrate_trading()
+        cfg = TradingConfig.from_env()
+        result = autotune(cfg)
+        Notifier(enabled=True).send(format_autotune(result))
+        return jsonify(result)
+    except Exception as e:
+        log.exception("autotune error")
+        return jsonify({"applied": False, "message": str(e)}), 500
+
+
+@bp.route("/review", methods=["GET", "POST"])
+def review_route():
+    """Само-аналіз: розбір результатів у Telegram."""
+    expected = os.getenv("TRADE_RUN_TOKEN")
+    if expected and request.args.get("token") != expected:
+        return jsonify({"status": "error", "message": "unauthorized"}), 401
+    from .tuner import performance_review
+    from .notify import Notifier
+    try:
+        store.migrate_trading()
+        cfg = TradingConfig.from_env()
+        msg = performance_review(cfg.mode)
+        sent = Notifier(enabled=True)
+        if sent.tg is not None:
+            sent.send(msg)
+        return jsonify({"ok": True, "review": msg})
+    except Exception as e:
+        log.exception("review error")
+        return jsonify({"ok": False, "message": str(e)}), 500
+
+
 @bp.route("/test-notify", methods=["GET"])
 def test_notify():
     """Надсилає тестове повідомлення в Telegram — перевірка налаштувань сповіщень."""

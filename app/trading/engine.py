@@ -26,13 +26,15 @@ log = logging.getLogger(__name__)
 
 class Engine:
     def __init__(self, cfg: TradingConfig):
+        store.migrate_trading()
+        from .tuner import apply_overrides
+        cfg = apply_overrides(cfg)   # підхоплюємо авто-підібрані параметри
         cfg.validate()
         self.cfg = cfg
         self.market = Market(cfg)
         self.strategy = make_strategy(cfg)
         self.broker = make_broker(cfg, self.market)
         self.notifier = Notifier(cfg.notify)
-        store.migrate_trading()
 
     # --- Один прохід циклу ---
 
