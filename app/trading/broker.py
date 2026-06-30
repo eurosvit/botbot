@@ -65,9 +65,7 @@ class PaperBroker:
     def open(self, symbol, side, qty, price, sl, tp, reason) -> int | None:
         if qty <= 0:
             return None
-        if self.cfg.market_type != "swap" and side != "long":
-            log.warning("paper open відхилено: short доступний лише на swap")
-            return None
+        # У paper шорти дозволені завжди (симуляція на спот-цінах).
         need = self._reserved(qty, price)
         if need > self.cash + 1e-9:
             log.warning("paper open відхилено: треба=%.2f, готівка=%.2f", need, self.cash)

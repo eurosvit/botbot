@@ -74,16 +74,20 @@ class TradingConfig:
 
     @classmethod
     def from_env(cls) -> "TradingConfig":
+        mode = os.getenv("TRADE_MODE", "paper").strip().lower()
+        # У paper-режимі шорти за замовчуванням увімкнені (симуляція, нуль ризику),
+        # щоб бот торгував і в падаючому ринку. У live — лише свідомо.
+        shorts_default = "true" if mode == "paper" else "false"
         return cls(
             exchange=os.getenv("TRADE_EXCHANGE", "binance"),
             symbols=_list("TRADE_SYMBOLS", "BTC/USDT,ETH/USDT"),
             timeframe=os.getenv("TRADE_TIMEFRAME", "1h"),
             quote_currency=os.getenv("TRADE_QUOTE", "USDT"),
-            mode=os.getenv("TRADE_MODE", "paper").strip().lower(),
+            mode=mode,
             testnet=_b("TRADE_TESTNET", "false"),
             market_type=os.getenv("TRADE_MARKET_TYPE", "spot").strip().lower(),
             leverage=_i("TRADE_LEVERAGE", "1"),
-            allow_shorts=_b("TRADE_ALLOW_SHORTS", "false"),
+            allow_shorts=_b("TRADE_ALLOW_SHORTS", shorts_default),
             paper_balance=_f("TRADE_PAPER_BALANCE", "1000"),
             strategy=os.getenv("TRADE_STRATEGY", "ema_rsi").strip().lower(),
             ema_fast=_i("TRADE_EMA_FAST", "12"),
@@ -129,5 +133,6 @@ class TradingConfig:
             raise ValueError("TRADE_LEVERAGE має бути >= 1")
         if self.market_type == "spot" and self.leverage != 1:
             raise ValueError("Плече доступне лише для market_type=swap")
-        if self.allow_shorts and self.market_type != "swap":
-            raise ValueError("Короткі позиції потребують market_type=swap")
+        # У LIVE реальний шорт можливий лише на ф'ючерсах; у paper — симулюємо на спот-цінах.
+        if self.allow_shorts and self.market_type != "swap" and self.mode == "live":
+            raise ValueError("Короткі позиції в LIVE потребують market_type=swap")

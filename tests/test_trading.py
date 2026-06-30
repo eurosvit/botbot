@@ -158,12 +158,20 @@ def test_futures_shorts():
     check("swap+плече+шорти валідуються", ok)
 
     bad = TradingConfig.from_env()
-    bad.allow_shorts = True  # spot + shorts -> помилка
+    bad.allow_shorts = True; bad.market_type = "spot"; bad.mode = "live"  # LIVE spot + shorts -> помилка
     try:
         bad.validate(); rejected = False
     except Exception:
         rejected = True
-    check("шорти на споті відхиляються", rejected)
+    check("шорти на LIVE-споті відхиляються", rejected)
+
+    paper = TradingConfig.from_env()
+    paper.allow_shorts = True; paper.market_type = "spot"; paper.mode = "paper"
+    try:
+        paper.validate(); paper_ok = True
+    except Exception:
+        paper_ok = False
+    check("шорти в paper-споті дозволені (симуляція)", paper_ok)
 
     # ф'ючерсний бектест із шортами проганяється коректно
     cfg.mode = "backtest"

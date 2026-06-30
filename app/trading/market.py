@@ -27,8 +27,11 @@ class Market:
             raise ValueError(f"ccxt не знає біржу '{cfg.exchange}'")
         klass = getattr(ccxt, cfg.exchange)
 
+        # Тип ринку для даних: swap лише у live-swap; у paper завжди spot-фід
+        # (шорти в paper симулюються на спот-цінах, тож не ламаємо біржі без свопів).
+        data_type = cfg.market_type if cfg.mode == "live" else "spot"
         params: dict = {"enableRateLimit": True,
-                        "options": {"defaultType": cfg.market_type}}
+                        "options": {"defaultType": data_type}}
         # Ключі потрібні лише для live; беремо за конвенцією EXCHANGE-агностично.
         api_key = os.getenv("TRADE_API_KEY")
         api_secret = os.getenv("TRADE_API_SECRET")
