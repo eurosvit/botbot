@@ -239,26 +239,35 @@ def test_notify():
 def signals():
     """Діагностика: жива «думка» стратегії по кожній парі (чому входить / не входить)."""
     from .market import Market
-    from .strategy import make_strategy
+    from .strategy import make_strategy, trend_direction, entry_allowed
+    from .tuner import apply_overrides
     try:
-        cfg = TradingConfig.from_env()
+        cfg = apply_overrides(TradingConfig.from_env())  # враховуємо авто-параметри
         m = Market(cfg)
         strat = make_strategy(cfg)
         out = []
         for s in cfg.symbols:
             try:
                 candles = m.fetch_ohlcv(s)
-                sig = strat.evaluate(candles[:-1])  # на закритих свічках
+                closed = candles[:-1]
+                sig = strat.evaluate(closed)
+                trend = trend_direction(cfg, [c[4] for c in closed])[-1]
+                side = "long" if sig.action == "buy" else (
+                    "short" if sig.action == "sell" and cfg.allow_shorts else None)
+                blocked = bool(side) and not entry_allowed(cfg, trend, side)
                 out.append({
                     "symbol": s,
                     "action": sig.action,
                     "reason": sig.reason,
                     "price": round(sig.price, 4) if sig.price else None,
                     "rsi": round(sig.rsi, 1) if sig.rsi is not None else None,
+                    "trend": trend,
+                    "entry_blocked_by_trend": blocked,
                 })
             except Exception as e:
                 out.append({"symbol": s, "error": str(e)[:160]})
         return jsonify({"strategy": cfg.strategy, "timeframe": cfg.timeframe,
+                        "trend_filter": cfg.use_trend_filter, "trend_ema": cfg.trend_ema,
                         "allow_shorts": cfg.allow_shorts, "signals": out})
     except Exception as e:
         log.exception("signals error")
