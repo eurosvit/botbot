@@ -37,7 +37,9 @@ bp = Blueprint("trading", __name__, url_prefix="/trading")
 @bp.route("/status", methods=["GET"])
 def status():
     try:
-        cfg = TradingConfig.from_env()
+        from .tuner import apply_overrides
+        from app.utils import utcnow
+        cfg = apply_overrides(TradingConfig.from_env())  # фактична конфігурація (з autotune)
         mode = _mode()
         store.migrate_trading()
         eng = get_engine()
@@ -58,18 +60,30 @@ def status():
                  WHERE status='closed' AND mode=:mode
             """), {"mode": mode}).mappings().first()
 
+        last_ts = last_eq["ts"] if last_eq else None
+        secs_since = int((utcnow() - last_ts).total_seconds()) if last_ts else None
         return jsonify({
             "mode": mode,
             "exchange": cfg.exchange,
             "symbols": cfg.symbols,
             "timeframe": cfg.timeframe,
+            # Фактична конфігурація (враховує авто-тюнінг):
+            "strategy": cfg.strategy,
+            "allow_shorts": cfg.allow_shorts,
+            "trend_filter": cfg.use_trend_filter,
+            "trend_ema": cfg.trend_ema,
+            "auto_overrides": store.get_overrides(),
+            # Живучість циклу:
+            "last_run": last_ts.isoformat() if last_ts else None,
+            "seconds_since_last_run": secs_since,
+            "scanning": secs_since is not None and secs_since < 600,
+            # Капітал і угоди:
             "equity": float(last_eq["equity"]) if last_eq else None,
             "cash": float(last_eq["cash"]) if last_eq else None,
             "open_positions": [dict(p) for p in positions],
             "pnl_today": store.realized_pnl_today(mode),
             "closed_trades": int(closed["n"]),
             "total_realized_pnl": float(closed["pnl"]),
-            "last_run": last_eq["ts"].isoformat() if last_eq else None,
         })
     except Exception as e:
         log.exception("trading status error")
