@@ -203,8 +203,10 @@ def pin():
     try:
         store.migrate_trading()
         store.clear_overrides()                       # прибрати авто-підібрані параметри
-        store.save_overrides({"strategy": strategy, "_autotune_off": "1"})
-        return jsonify({"ok": True, "pinned_strategy": strategy, "autotune": "off"})
+        store.delete_config("_autotune_off")          # прибрати старий маркер
+        store.save_overrides({"strategy": strategy, "_pinned_strategy": strategy})
+        return jsonify({"ok": True, "pinned_strategy": strategy,
+                        "autotune": "оптимізує лише цю стратегію"})
     except Exception as e:
         log.exception("pin error")
         return jsonify({"ok": False, "message": str(e)}), 500
@@ -217,7 +219,8 @@ def unpin():
         store.migrate_trading()
         store.clear_overrides()
         store.delete_config("_autotune_off")
-        return jsonify({"ok": True, "autotune": "on"})
+        store.delete_config("_pinned_strategy")
+        return jsonify({"ok": True, "autotune": "вільний вибір стратегії"})
     except Exception as e:
         log.exception("unpin error")
         return jsonify({"ok": False, "message": str(e)}), 500
@@ -234,7 +237,7 @@ def autotune_route():
     try:
         store.migrate_trading()
         cfg = TradingConfig.from_env()
-        result = autotune(cfg)
+        result = autotune(cfg, lock_strategy=store.pinned_strategy())
         Notifier(enabled=True).send(format_autotune(result))
         return jsonify(result)
     except Exception as e:

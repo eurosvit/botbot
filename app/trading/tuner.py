@@ -46,8 +46,12 @@ def apply_overrides(cfg: TradingConfig) -> TradingConfig:
     return replace(cfg, **changes) if changes else cfg
 
 
-def autotune(cfg: TradingConfig, candles_n: int = 1000) -> dict:
-    """Підбирає найкращу стратегію+параметри на свіжих даних і застосовує (якщо вони в плюсі)."""
+def autotune(cfg: TradingConfig, candles_n: int = 1000, lock_strategy: str | None = None) -> dict:
+    """Підбирає найкращі параметри на свіжих даних і застосовує (якщо вони в плюсі).
+
+    lock_strategy — якщо задано, оптимізуємо ЛИШЕ цю стратегію (тюнінг її параметрів),
+    не перемикаючи на іншу. Інакше перебираємо всі стратегії й обираємо найкращу.
+    """
     from .market import Market
     from .backtest import fetch_history
     from .optimize import optimize, GRIDS
@@ -60,8 +64,9 @@ def autotune(cfg: TradingConfig, candles_n: int = 1000) -> dict:
     if len(candles) < 200:
         return {"applied": False, "reason": f"мало історії ({len(candles)})"}
 
+    names = [lock_strategy] if lock_strategy else list(STRATEGIES)
     best = None
-    for name in STRATEGIES:
+    for name in names:
         if name not in GRIDS:
             continue
         res = optimize(replace(base, strategy=name), symbol, candles, top=1)

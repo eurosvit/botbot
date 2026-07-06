@@ -190,12 +190,18 @@ def delete_config(key: str) -> None:
         c.execute(text("DELETE FROM trade_config WHERE key=:k"), {"k": key})
 
 
-def autotune_enabled() -> bool:
-    """False, якщо стратегію закріплено вручну (autotune не має її змінювати)."""
+def pinned_strategy() -> str | None:
+    """Яку стратегію закріплено вручну (autotune оптимізує ЛИШЕ її параметри).
+    None — стратегію не закріплено (autotune вільний обирати будь-яку)."""
     eng = get_engine()
     with eng.begin() as c:
-        v = c.execute(text("SELECT value FROM trade_config WHERE key='_autotune_off'")).scalar_one_or_none()
-    return v is None
+        rows = c.execute(text("SELECT key, value FROM trade_config")).mappings().all()
+    d = {r["key"]: r["value"] for r in rows}
+    if d.get("_pinned_strategy"):
+        return d["_pinned_strategy"]
+    if "_autotune_off" in d:            # сумісність зі старим закріпленням
+        return d.get("strategy")
+    return None
 
 
 def overrides_updated_at(key: str = "strategy"):

@@ -54,14 +54,13 @@ def _scheduled_autotune():
     """Раз на тиждень: авто-тюнінг параметрів на свіжих даних (із дедуплікацією між воркерами)."""
     try:
         from app.trading import store
-        if not store.autotune_enabled():                 # стратегію закріплено вручну
-            return
         if not store.due("_autotune", 6 * 24 * 3600):   # не частіше ~разу на тиждень
             return
         from app.trading.config import TradingConfig
         from app.trading.tuner import autotune, format_autotune
         from app.trading.notify import Notifier
-        result = autotune(TradingConfig.from_env())
+        # Якщо стратегію закріплено — тюнимо лише її параметри, не перемикаючи.
+        result = autotune(TradingConfig.from_env(), lock_strategy=store.pinned_strategy())
         Notifier(enabled=True).send(format_autotune(result))
         logger.info("autotune: %s", result)
     except Exception:
