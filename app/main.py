@@ -54,6 +54,8 @@ def _scheduled_autotune():
     """Раз на тиждень: авто-тюнінг параметрів на свіжих даних (із дедуплікацією між воркерами)."""
     try:
         from app.trading import store
+        if not store.autotune_enabled():                 # стратегію закріплено вручну
+            return
         if not store.due("_autotune", 6 * 24 * 3600):   # не частіше ~разу на тиждень
             return
         from app.trading.config import TradingConfig

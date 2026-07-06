@@ -193,6 +193,36 @@ def daily_summary():
         return jsonify({"ok": False, "message": str(e)}), 500
 
 
+@bp.route("/pin", methods=["GET", "POST"])
+def pin():
+    """Закріпити стратегію вручну й вимкнути autotune. Напр. /trading/pin?strategy=macd"""
+    from .strategy import STRATEGIES
+    strategy = (request.args.get("strategy") or "macd").strip().lower()
+    if strategy not in STRATEGIES:
+        return jsonify({"ok": False, "message": f"невідома стратегія (є: {', '.join(STRATEGIES)})"}), 400
+    try:
+        store.migrate_trading()
+        store.clear_overrides()                       # прибрати авто-підібрані параметри
+        store.save_overrides({"strategy": strategy, "_autotune_off": "1"})
+        return jsonify({"ok": True, "pinned_strategy": strategy, "autotune": "off"})
+    except Exception as e:
+        log.exception("pin error")
+        return jsonify({"ok": False, "message": str(e)}), 500
+
+
+@bp.route("/unpin", methods=["GET", "POST"])
+def unpin():
+    """Зняти закріплення й знову ввімкнути autotune."""
+    try:
+        store.migrate_trading()
+        store.clear_overrides()
+        store.delete_config("_autotune_off")
+        return jsonify({"ok": True, "autotune": "on"})
+    except Exception as e:
+        log.exception("unpin error")
+        return jsonify({"ok": False, "message": str(e)}), 500
+
+
 @bp.route("/autotune", methods=["GET", "POST"])
 def autotune_route():
     """Авто-тюнінг: підбирає й застосовує кращу конфігурацію на свіжих даних."""

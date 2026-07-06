@@ -177,6 +177,27 @@ def get_overrides() -> dict:
     return {r["key"]: r["value"] for r in rows if not r["key"].startswith("_")}
 
 
+def clear_overrides() -> None:
+    """Прибирає авто-параметри (службові ключі з '_' лишаються)."""
+    eng = get_engine()
+    with eng.begin() as c:
+        c.execute(text("DELETE FROM trade_config WHERE left(key, 1) <> '_'"))
+
+
+def delete_config(key: str) -> None:
+    eng = get_engine()
+    with eng.begin() as c:
+        c.execute(text("DELETE FROM trade_config WHERE key=:k"), {"k": key})
+
+
+def autotune_enabled() -> bool:
+    """False, якщо стратегію закріплено вручну (autotune не має її змінювати)."""
+    eng = get_engine()
+    with eng.begin() as c:
+        v = c.execute(text("SELECT value FROM trade_config WHERE key='_autotune_off'")).scalar_one_or_none()
+    return v is None
+
+
 def overrides_updated_at(key: str = "strategy"):
     """Коли востаннє оновлювалися авто-параметри (для запобіжника частих перезапусків тюнінгу)."""
     eng = get_engine()
