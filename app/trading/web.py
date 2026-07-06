@@ -55,7 +55,8 @@ def status():
                  WHERE mode=:mode ORDER BY ts DESC LIMIT 1
             """), {"mode": mode}).mappings().first()
             closed = c.execute(text("""
-                SELECT COUNT(*) AS n, COALESCE(SUM(pnl),0) AS pnl
+                SELECT COUNT(*) AS n, COALESCE(SUM(pnl),0) AS pnl,
+                       COALESCE(SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END),0) AS wins
                   FROM trade_positions
                  WHERE status='closed' AND mode=:mode
             """), {"mode": mode}).mappings().first()
@@ -83,6 +84,8 @@ def status():
             "open_positions": [dict(p) for p in positions],
             "pnl_today": store.realized_pnl_today(mode),
             "closed_trades": int(closed["n"]),
+            "wins": int(closed["wins"]),
+            "win_rate": round(int(closed["wins"]) / int(closed["n"]) * 100, 1) if int(closed["n"]) else None,
             "total_realized_pnl": float(closed["pnl"]),
         })
     except Exception as e:

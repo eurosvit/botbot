@@ -135,6 +135,8 @@ function renderCards(st, eq) {
     {label:"PnL сьогодні", value:(st.pnl_today>0?"+":"")+fmt(st.pnl_today), c:cls(st.pnl_today)},
     {label:"Реалізований PnL", value:(st.total_realized_pnl>0?"+":"")+fmt(st.total_realized_pnl), c:cls(st.total_realized_pnl)},
     {label:"Закритих угод", value: st.closed_trades ?? 0, c:""},
+    {label:"Вдалих угод", value: (st.win_rate===null||st.win_rate===undefined)?"—":fmt(st.win_rate,0)+"%",
+       c: (st.win_rate>=50?"pos":(st.win_rate!==null&&st.win_rate!==undefined?"neg":"")) },
     {label:"Відкритих позицій", value:(st.open_positions||[]).length, c:""},
   ];
   document.getElementById("cards").innerHTML = cards.map(c =>
