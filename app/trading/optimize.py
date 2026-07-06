@@ -30,14 +30,15 @@ GRIDS: dict[str, dict[str, list]] = {
         "ema_fast": [9, 12, 20],
         "ema_slow": [26, 50],
         "rsi_overbought": [65, 70, 75],
-        "atr_sl_mult": [1.0, 1.5, 2.0],
-        "atr_tp_mult": [2.0, 3.0],
+        "atr_sl_mult": [1.5, 2.0, 3.0],
+        "atr_tp_mult": [1.0, 1.5, 2.0, 3.0],
     },
     "macd": {
         "macd_fast": [8, 12],
         "macd_slow": [21, 26],
-        "atr_sl_mult": [1.0, 1.5, 2.0],
-        "atr_tp_mult": [2.0, 3.0, 4.0],
+        # ширші стопи + ближчі тейки дають вищий % вдалих угод (з контролем ризику)
+        "atr_sl_mult": [1.5, 2.0, 3.0],
+        "atr_tp_mult": [1.0, 1.5, 2.0, 3.0],
     },
     "bollinger": {
         "bb_period": [14, 20],

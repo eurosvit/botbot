@@ -64,15 +64,25 @@ def autotune(cfg: TradingConfig, candles_n: int = 1000, lock_strategy: str | Non
     if len(candles) < 200:
         return {"applied": False, "reason": f"мало історії ({len(candles)})"}
 
+    def _pick(res: list) -> dict | None:
+        """Ціль — максимальний % вдалих угод серед ПРИБУТКОВИХ і не надто ризикових."""
+        profitable = [r for r in res if r["trades"] >= 5
+                      and r["total_return_pct"] > 0 and r["max_drawdown_pct"] <= 15]
+        pool = profitable or [r for r in res if r["score"] not in (float("inf"), float("-inf"))]
+        if not pool:
+            return None
+        return max(pool, key=lambda r: (r["win_rate"], r["total_return_pct"]))
+
     names = [lock_strategy] if lock_strategy else list(STRATEGIES)
     best = None
     for name in names:
         if name not in GRIDS:
             continue
-        res = optimize(replace(base, strategy=name), symbol, candles, top=1)
-        if res and res[0]["score"] not in (float("inf"), float("-inf")):
-            cand = {"strategy": name, **res[0]}
-            if best is None or cand["score"] > best["score"]:
+        cand = _pick(optimize(replace(base, strategy=name), symbol, candles, top=20))
+        if cand:
+            cand = {"strategy": name, **cand}
+            if best is None or (cand["win_rate"], cand["total_return_pct"]) > \
+                               (best["win_rate"], best["total_return_pct"]):
                 best = cand
 
     if not best:
@@ -84,11 +94,12 @@ def autotune(cfg: TradingConfig, candles_n: int = 1000, lock_strategy: str | Non
     overrides = {"strategy": best["strategy"]}
     overrides.update({k: str(v) for k, v in best["params"].items()})
     store.save_overrides(overrides)
-    log.info("autotune застосував %s %s (ret=%.2f%%)", best["strategy"], best["params"],
-             best["total_return_pct"])
+    log.info("autotune застосував %s %s (win=%.0f%%, ret=%.2f%%)", best["strategy"],
+             best["params"], best["win_rate"], best["total_return_pct"])
     return {
         "applied": True, "symbol": symbol, "strategy": best["strategy"],
-        "params": best["params"], "return_pct": round(best["total_return_pct"], 2),
+        "params": best["params"], "win_rate": round(best["win_rate"], 1),
+        "return_pct": round(best["total_return_pct"], 2),
         "max_drawdown_pct": round(best["max_drawdown_pct"], 2),
         "trades": best["trades"], "score": round(best["score"], 2),
     }
@@ -100,7 +111,8 @@ def format_autotune(result: dict) -> str:
         return (f"🧠 <b>Авто-тюнінг</b>\n"
                 f"Нова конфігурація на основі {result['symbol']}:\n"
                 f"Стратегія: <b>{result['strategy']}</b>\n{p}\n"
-                f"На історії: дохід {result['return_pct']:+.2f}%, "
+                f"На історії: <b>{result.get('win_rate', 0):.0f}% вдалих</b>, "
+                f"дохід {result['return_pct']:+.2f}%, "
                 f"просадка {result['max_drawdown_pct']:.2f}%, угод {result['trades']}")
     return f"🧠 <b>Авто-тюнінг</b>: без змін — {result.get('reason', '')}"
 
