@@ -46,74 +46,98 @@ def apply_overrides(cfg: TradingConfig) -> TradingConfig:
     return replace(cfg, **changes) if changes else cfg
 
 
-def autotune(cfg: TradingConfig, candles_n: int = 1000, lock_strategy: str | None = None) -> dict:
-    """Підбирає найкращі параметри на свіжих даних і застосовує (якщо вони в плюсі).
+def _walk_forward_one(base: TradingConfig, name: str, symbol: str, candles: list) -> dict | None:
+    """Walk-forward для однієї стратегії: підбір на «старій» частині,
+    перевірка на «свіжій» (out-of-sample). Повертає найкращий конфіг, що
+    ПІДТВЕРДИВСЯ поза вибіркою, або None."""
+    from .backtest import run
+    from .optimize import optimize, GRIDS
+    from .strategy import warmup_bars
+    if name not in GRIDS:
+        return None
+    n = len(candles)
+    wu = warmup_bars(base)
+    split = int(n * 0.7)
+    in_sample = candles[:split]
+    oos = candles[max(0, split - wu):]          # хвіст in-sample як розігрів для індикаторів
+    if len(in_sample) < wu + 30 or len(oos) < wu + 10:
+        return None
 
-    lock_strategy — якщо задано, оптимізуємо ЛИШЕ цю стратегію (тюнінг її параметрів),
-    не перемикаючи на іншу. Інакше перебираємо всі стратегії й обираємо найкращу.
+    best = None
+    for c in optimize(replace(base, strategy=name), symbol, in_sample, top=15):
+        # має бути ХОРОШИМ на in-sample…
+        if c["trades"] < 5 or c["total_return_pct"] <= 0:
+            continue
+        cfg2 = replace(base, strategy=name, **c["params"])
+        oos_r = run(cfg2, symbol, oos)
+        # …І ПІДТВЕРДИТИСЬ на out-of-sample:
+        if oos_r["trades"] < 3 or oos_r["total_return_pct"] <= 0 or oos_r["max_drawdown_pct"] > 15:
+            continue
+        cand = {"strategy": name, "params": c["params"],
+                "is_win": c["win_rate"], "is_return": c["total_return_pct"],
+                "oos_win": oos_r["win_rate"], "oos_return": oos_r["total_return_pct"],
+                "oos_dd": oos_r["max_drawdown_pct"], "oos_trades": oos_r["trades"]}
+        # обираємо за результатами САМЕ поза вибіркою (win-rate, потім дохід)
+        if best is None or (cand["oos_win"], cand["oos_return"]) > (best["oos_win"], best["oos_return"]):
+            best = cand
+    return best
+
+
+def walk_forward_select(base: TradingConfig, names: list, symbol: str, candles: list) -> dict | None:
+    """Найкращий підтверджений поза вибіркою конфіг серед стратегій `names`."""
+    best = None
+    for name in names:
+        cand = _walk_forward_one(base, name, symbol, candles)
+        if cand and (best is None or (cand["oos_win"], cand["oos_return"]) >
+                     (best["oos_win"], best["oos_return"])):
+            best = cand
+    return best
+
+
+def autotune(cfg: TradingConfig, candles_n: int = 1200, lock_strategy: str | None = None) -> dict:
+    """Walk-forward автотюнінг: застосовує лише конфіг, який підтвердився на
+    свіжій (невидимій під час підбору) частині даних — це зменшує перенавчання.
+
+    lock_strategy — якщо задано, тюнимо ЛИШЕ цю стратегію, не перемикаючи.
     """
     from .market import Market
     from .backtest import fetch_history
-    from .optimize import optimize, GRIDS
     from .strategy import STRATEGIES
 
     base = replace(cfg, mode="backtest")
     symbol = cfg.symbols[0]
-    market = Market(base)
-    candles = fetch_history(market, symbol, candles_n)
-    if len(candles) < 200:
+    candles = fetch_history(Market(base), symbol, candles_n)
+    if len(candles) < 300:
         return {"applied": False, "reason": f"мало історії ({len(candles)})"}
 
-    def _pick(res: list) -> dict | None:
-        """Ціль — максимальний % вдалих угод серед ПРИБУТКОВИХ і не надто ризикових."""
-        profitable = [r for r in res if r["trades"] >= 5
-                      and r["total_return_pct"] > 0 and r["max_drawdown_pct"] <= 15]
-        pool = profitable or [r for r in res if r["score"] not in (float("inf"), float("-inf"))]
-        if not pool:
-            return None
-        return max(pool, key=lambda r: (r["win_rate"], r["total_return_pct"]))
-
     names = [lock_strategy] if lock_strategy else list(STRATEGIES)
-    best = None
-    for name in names:
-        if name not in GRIDS:
-            continue
-        cand = _pick(optimize(replace(base, strategy=name), symbol, candles, top=20))
-        if cand:
-            cand = {"strategy": name, **cand}
-            if best is None or (cand["win_rate"], cand["total_return_pct"]) > \
-                               (best["win_rate"], best["total_return_pct"]):
-                best = cand
-
+    best = walk_forward_select(base, names, symbol, candles)
     if not best:
-        return {"applied": False, "reason": "немає надійних комбінацій (замало угод)"}
-    if best["total_return_pct"] <= 0:
-        return {"applied": False, "reason": "усі варіанти в мінусі — лишаємо поточні налаштування",
-                "best_strategy": best["strategy"], "best_return_pct": best["total_return_pct"]}
+        return {"applied": False,
+                "reason": "жодна конфігурація не підтвердилась поза вибіркою (walk-forward)"}
 
     overrides = {"strategy": best["strategy"]}
     overrides.update({k: str(v) for k, v in best["params"].items()})
     store.save_overrides(overrides)
-    log.info("autotune застосував %s %s (win=%.0f%%, ret=%.2f%%)", best["strategy"],
-             best["params"], best["win_rate"], best["total_return_pct"])
+    log.info("autotune застосував %s %s (oos win=%.0f%%, oos ret=%.2f%%)",
+             best["strategy"], best["params"], best["oos_win"], best["oos_return"])
     return {
-        "applied": True, "symbol": symbol, "strategy": best["strategy"],
-        "params": best["params"], "win_rate": round(best["win_rate"], 1),
-        "return_pct": round(best["total_return_pct"], 2),
-        "max_drawdown_pct": round(best["max_drawdown_pct"], 2),
-        "trades": best["trades"], "score": round(best["score"], 2),
+        "applied": True, "symbol": symbol, "strategy": best["strategy"], "params": best["params"],
+        "in_sample_win": round(best["is_win"], 1), "in_sample_return": round(best["is_return"], 2),
+        "oos_win": round(best["oos_win"], 1), "oos_return": round(best["oos_return"], 2),
+        "oos_trades": best["oos_trades"], "oos_drawdown": round(best["oos_dd"], 2),
     }
 
 
 def format_autotune(result: dict) -> str:
     if result.get("applied"):
         p = " ".join(f"{k}={v}" for k, v in result["params"].items())
-        return (f"🧠 <b>Авто-тюнінг</b>\n"
-                f"Нова конфігурація на основі {result['symbol']}:\n"
-                f"Стратегія: <b>{result['strategy']}</b>\n{p}\n"
-                f"На історії: <b>{result.get('win_rate', 0):.0f}% вдалих</b>, "
-                f"дохід {result['return_pct']:+.2f}%, "
-                f"просадка {result['max_drawdown_pct']:.2f}%, угод {result['trades']}")
+        return (f"🧠 <b>Авто-тюнінг</b> (walk-forward)\n"
+                f"Стратегія: <b>{result['strategy']}</b> ({result['symbol']})\n{p}\n"
+                f"На підборі: {result['in_sample_win']:.0f}% вдалих, {result['in_sample_return']:+.2f}%\n"
+                f"✅ Перевірка поза вибіркою: <b>{result['oos_win']:.0f}% вдалих</b>, "
+                f"{result['oos_return']:+.2f}%, просадка {result['oos_drawdown']:.2f}%, "
+                f"угод {result['oos_trades']}")
     return f"🧠 <b>Авто-тюнінг</b>: без змін — {result.get('reason', '')}"
 
 

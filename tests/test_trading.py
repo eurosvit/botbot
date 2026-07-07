@@ -231,6 +231,21 @@ def test_tuner_overrides():
         _store.get_overrides = orig
 
 
+def test_walk_forward():
+    print("walk-forward валідація:")
+    from app.trading.tuner import walk_forward_select
+    cfg = TradingConfig.from_env()
+    cfg.mode = "backtest"
+    candles = _synthetic_trend(600)
+    res = walk_forward_select(cfg, ["macd", "ema_rsi", "bollinger", "donchian"], "TEST/USDT", candles)
+    # результат — або None (нічого не підтвердилось), або конфіг, прибутковий поза вибіркою
+    ok = res is None or (res.get("oos_return", 0) > 0 and "params" in res and "strategy" in res)
+    check("walk-forward: None або підтверджений поза вибіркою конфіг", ok)
+    if res:
+        print(f"    -> {res['strategy']}: in-sample {res['is_win']:.0f}%/{res['is_return']:+.1f}%, "
+              f"OOS {res['oos_win']:.0f}%/{res['oos_return']:+.1f}%")
+
+
 def test_report():
     print("звіт:")
     cfg = TradingConfig.from_env()
@@ -273,6 +288,7 @@ def main():
     test_daily_summary_format()
     test_trend_filter()
     test_tuner_overrides()
+    test_walk_forward()
     test_report()
     test_optimizer()
     print("-" * 50)
