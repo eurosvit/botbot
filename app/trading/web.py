@@ -30,6 +30,15 @@ def _mode() -> str:
     m = (request.args.get("mode") or "").strip().lower()
     return m if m in ("paper", "live", "backtest") else TradingConfig.from_env().mode
 
+
+def _days() -> int | None:
+    """Фільтр періоду в днях (?days=7). None/0 — весь час."""
+    try:
+        d = int(request.args.get("days", "0"))
+        return d if d > 0 else None
+    except (TypeError, ValueError):
+        return None
+
 log = logging.getLogger(__name__)
 bp = Blueprint("trading", __name__, url_prefix="/trading")
 
@@ -41,8 +50,14 @@ def status():
         from app.utils import utcnow
         cfg = apply_overrides(TradingConfig.from_env())  # фактична конфігурація (з autotune)
         mode = _mode()
+        days = _days()
         store.migrate_trading()
         eng = get_engine()
+        params = {"mode": mode}
+        day_flt = ""
+        if days:
+            day_flt = " AND closed_at >= NOW() - make_interval(days => :d)"
+            params["d"] = days
         with eng.begin() as c:
             positions = c.execute(text("""
                 SELECT symbol, side, qty, entry_price, stop_loss, take_profit, opened_at
@@ -54,12 +69,12 @@ def status():
                 SELECT equity, cash, open_positions, ts FROM trade_equity
                  WHERE mode=:mode ORDER BY ts DESC LIMIT 1
             """), {"mode": mode}).mappings().first()
-            closed = c.execute(text("""
+            closed = c.execute(text(f"""
                 SELECT COUNT(*) AS n, COALESCE(SUM(pnl),0) AS pnl,
                        COALESCE(SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END),0) AS wins
                   FROM trade_positions
-                 WHERE status='closed' AND mode=:mode
-            """), {"mode": mode}).mappings().first()
+                 WHERE status='closed' AND mode=:mode{day_flt}
+            """), params).mappings().first()
 
         last_ts = last_eq["ts"] if last_eq else None
         secs_since = int((utcnow() - last_ts).total_seconds()) if last_ts else None
@@ -103,11 +118,16 @@ def equity_json():
     try:
         store.migrate_trading()
         eng = get_engine()
+        params = {"mode": _mode()}
+        flt = ""
+        if _days():
+            flt = " AND ts >= NOW() - make_interval(days => :d)"
+            params["d"] = _days()
         with eng.begin() as c:
-            rows = c.execute(text("""
+            rows = c.execute(text(f"""
                 SELECT ts, equity, cash, open_positions FROM trade_equity
-                 WHERE mode=:mode ORDER BY ts DESC LIMIT 1000
-            """), {"mode": _mode()}).mappings().all()
+                 WHERE mode=:mode{flt} ORDER BY ts DESC LIMIT 2000
+            """), params).mappings().all()
         # повертаємо у хронологічному порядку (для графіка)
         rows = list(reversed(rows))
         return jsonify([{
@@ -126,14 +146,19 @@ def trades_json():
     try:
         store.migrate_trading()
         eng = get_engine()
+        params = {"mode": _mode()}
+        flt = ""
+        if _days():
+            flt = " AND closed_at >= NOW() - make_interval(days => :d)"
+            params["d"] = _days()
         with eng.begin() as c:
-            rows = c.execute(text("""
+            rows = c.execute(text(f"""
                 SELECT symbol, side, qty, entry_price, exit_price, pnl, pnl_pct,
                        reason_close, opened_at, closed_at
                   FROM trade_positions
-                 WHERE status='closed' AND mode=:mode
-                 ORDER BY closed_at DESC LIMIT 100
-            """), {"mode": _mode()}).mappings().all()
+                 WHERE status='closed' AND mode=:mode{flt}
+                 ORDER BY closed_at DESC LIMIT 200
+            """), params).mappings().all()
         return jsonify([{
             "symbol": r["symbol"],
             "side": r["side"],

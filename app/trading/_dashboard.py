@@ -40,6 +40,10 @@ DASHBOARD_HTML = r"""<!doctype html>
       font-size:13px; font-weight:600; cursor:pointer; }
   .optbar button:disabled { opacity:.5; cursor:default; }
   tr.best td { background:#1f6feb22; }
+  .periods { display:flex; gap:4px; }
+  .periods button { background:#161b22; color:#8b949e; border:1px solid #2b3947;
+      border-radius:8px; padding:5px 10px; font-size:12px; cursor:pointer; }
+  .periods button.active { background:#1f6feb; color:#fff; border-color:#1f6feb; }
 </style>
 </head>
 <body>
@@ -47,7 +51,13 @@ DASHBOARD_HTML = r"""<!doctype html>
   <h1>🤖 Торговий дашборд</h1>
   <span class="badge" id="mode">…</span>
   <span class="muted" id="meta"></span>
-  <span class="muted" id="updated" style="margin-left:auto"></span>
+  <span class="periods" id="periods" style="margin-left:auto">
+    <button data-days="1">24г</button>
+    <button data-days="7">7д</button>
+    <button data-days="30">30д</button>
+    <button data-days="0" class="active">Весь час</button>
+  </span>
+  <span class="muted" id="updated"></span>
 </header>
 <div class="wrap">
   <div class="cards" id="cards"></div>
@@ -101,13 +111,15 @@ DASHBOARD_HTML = r"""<!doctype html>
 const fmt = (n, d=2) => (n===null||n===undefined||isNaN(n)) ? "—" : Number(n).toLocaleString("uk-UA",{minimumFractionDigits:d,maximumFractionDigits:d});
 const cls = n => n>0 ? "pos" : n<0 ? "neg" : "";
 let chart;
+let periodDays = 0;   // 0 = весь час
 
 async function load() {
   try {
+    const q = periodDays ? ("?days=" + periodDays) : "";
     const [st, eq, tr] = await Promise.all([
-      fetch("status").then(r=>r.json()),
-      fetch("equity.json").then(r=>r.json()),
-      fetch("trades.json").then(r=>r.json()),
+      fetch("status" + q).then(r=>r.json()),
+      fetch("equity.json" + q).then(r=>r.json()),
+      fetch("trades.json" + q).then(r=>r.json()),
     ]);
     renderHeader(st);
     renderCards(st, eq);
@@ -206,6 +218,14 @@ async function runOptimize() {
     status.textContent = "";
   } finally { btn.disabled = false; }
 }
+
+// перемикачі періоду
+document.querySelectorAll("#periods button").forEach(b => b.addEventListener("click", () => {
+  periodDays = parseInt(b.dataset.days, 10) || 0;
+  document.querySelectorAll("#periods button").forEach(x => x.classList.remove("active"));
+  b.classList.add("active");
+  load();
+}));
 
 load();
 setInterval(load, 15000);
