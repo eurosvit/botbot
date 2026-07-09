@@ -118,18 +118,25 @@ def equity_json():
     try:
         store.migrate_trading()
         eng = get_engine()
-        params = {"mode": _mode()}
+        days = _days()
+        # Знімки пишуться щохвилини — агрегуємо в бакети, щоб крива була читабельна
+        # й реально залежала від періоду (інакше LIMIT показує лише останні години).
+        sec = 300 if (days and days <= 1) else 1800 if (days and days <= 7) \
+            else 14400 if (days and days <= 30) else 7200
+        params = {"mode": _mode(), "sec": sec}
         flt = ""
-        if _days():
+        if days:
             flt = " AND ts >= NOW() - make_interval(days => :d)"
-            params["d"] = _days()
+            params["d"] = days
         with eng.begin() as c:
             rows = c.execute(text(f"""
-                SELECT ts, equity, cash, open_positions FROM trade_equity
-                 WHERE mode=:mode{flt} ORDER BY ts DESC LIMIT 2000
+                SELECT to_timestamp(floor(extract(epoch from ts)/:sec)*:sec) AS ts,
+                       AVG(equity) AS equity, AVG(cash) AS cash,
+                       MAX(open_positions) AS open_positions
+                  FROM trade_equity
+                 WHERE mode=:mode{flt}
+                 GROUP BY 1 ORDER BY 1
             """), params).mappings().all()
-        # повертаємо у хронологічному порядку (для графіка)
-        rows = list(reversed(rows))
         return jsonify([{
             "ts": r["ts"].isoformat(),
             "equity": float(r["equity"]),
