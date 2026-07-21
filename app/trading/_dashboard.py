@@ -127,7 +127,7 @@ async function load() {
     const tr = Array.isArray(trRaw) ? trRaw : [];
     const errMsg = (stRaw && stRaw.message) || (eqRaw && eqRaw.message) || (trRaw && trRaw.message);
     if (errMsg) document.getElementById("updated").textContent = "⚠️ БД: " + errMsg;
-    else document.getElementById("updated").textContent = "оновлено " + new Date().toLocaleTimeString("uk-UA");
+    else document.getElementById("updated").textContent = "оновлено " + new Date().toLocaleTimeString("uk-UA") + " (кожну хв)";
     renderHeader(st);
     renderCards(st, eq);
     renderChart(eq);
@@ -234,7 +234,7 @@ document.querySelectorAll("#periods button").forEach(b => b.addEventListener("cl
 }));
 
 load();
-setInterval(load, 15000);
+setInterval(load, 60000);   // рідше оновлення — щадимо безкоштовну БД
 </script>
 </body>
 </html>

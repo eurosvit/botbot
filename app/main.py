@@ -41,9 +41,10 @@ def _scheduled_cycle():
         from app.trading import store
         from app.utils import utcnow
         cfg = TradingConfig.from_env()
-        # Дедуплікація між воркерами gunicorn: якщо знімок щойно зроблено — пропускаємо.
+        # Дедуплікація між воркерами + економія БД: не частіше, ніж раз на цикл.
+        cycle = int(os.getenv("TRADE_CYCLE_SECONDS", "1800"))
         last = store.last_equity_ts(cfg.mode)
-        if last and (utcnow() - last).total_seconds() < cfg.poll_seconds * 0.7:
+        if last and (utcnow() - last).total_seconds() < cycle * 0.7:
             return
         Engine(cfg).run_once()
     except Exception:
@@ -86,7 +87,9 @@ def _scheduled_review():
 if os.getenv("TRADE_SCHEDULER", "true").strip().lower() in ("1", "true", "yes", "on"):
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
-        _interval = int(os.getenv("TRADE_POLL_SECONDS", "60"))
+        # 30 хв за замовч.: рідше звертань до БД → Neon встигає «засинати»
+        # і бот вкладається в безкоштовний compute-ліміт. На 1h-таймфреймі якість не страждає.
+        _interval = int(os.getenv("TRADE_CYCLE_SECONDS", "1800"))
         _sched = BackgroundScheduler(timezone="UTC")
         _sched.add_job(_scheduled_cycle, "interval", seconds=_interval,
                        max_instances=1, coalesce=True, id="trade_cycle")
