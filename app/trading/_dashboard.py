@@ -116,16 +116,22 @@ let periodDays = 0;   // 0 = весь час
 async function load() {
   try {
     const q = periodDays ? ("?days=" + periodDays) : "";
-    const [st, eq, tr] = await Promise.all([
-      fetch("status" + q).then(r=>r.json()),
-      fetch("equity.json" + q).then(r=>r.json()),
-      fetch("trades.json" + q).then(r=>r.json()),
+    const [stRaw, eqRaw, trRaw] = await Promise.all([
+      fetch("status" + q).then(r=>r.json()).catch(()=>({})),
+      fetch("equity.json" + q).then(r=>r.json()).catch(()=>[]),
+      fetch("trades.json" + q).then(r=>r.json()).catch(()=>[]),
     ]);
+    // Стійкість: якщо ендпоінт повернув помилку (об'єкт), не валимо весь дашборд.
+    const st = (stRaw && !stRaw.status) ? stRaw : {};
+    const eq = Array.isArray(eqRaw) ? eqRaw : [];
+    const tr = Array.isArray(trRaw) ? trRaw : [];
+    const errMsg = (stRaw && stRaw.message) || (eqRaw && eqRaw.message) || (trRaw && trRaw.message);
+    if (errMsg) document.getElementById("updated").textContent = "⚠️ БД: " + errMsg;
+    else document.getElementById("updated").textContent = "оновлено " + new Date().toLocaleTimeString("uk-UA");
     renderHeader(st);
     renderCards(st, eq);
     renderChart(eq);
     renderTrades(tr);
-    document.getElementById("updated").textContent = "оновлено " + new Date().toLocaleTimeString("uk-UA");
   } catch(e) {
     document.getElementById("meta").textContent = "помилка завантаження: " + e;
   }
