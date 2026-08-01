@@ -25,7 +25,7 @@ services:
       - key: TRADE_EXCHANGE
         value: kraken              # Binance блокує US-IP Render (451); Kraken працює зі США
       - key: TRADE_SYMBOLS
-        value: BTC/USDT,ETH/USDT
+        value: BTC/USDT,ETH/USDT,SOL/USDT,XRP/USDT,ADA/USDT,DOGE/USDT   # більше пар = більше сигналів (частіші угоди)
       - key: TRADE_TIMEFRAME
         value: 1h                  # вищий таймфрейм = менше шуму/хибних сигналів
       - key: TRADE_STRATEGY
