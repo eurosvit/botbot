@@ -23,6 +23,9 @@ from .strategy import make_strategy, trend_direction, entry_allowed, warmup_bars
 
 log = logging.getLogger(__name__)
 
+# Мінімальна сума угоди — щоб не відкривати «пил» на залишку кешу (баг «0.000000»).
+MIN_NOTIONAL_USD = 10.0
+
 
 class Engine:
     def __init__(self, cfg: TradingConfig):
@@ -51,18 +54,27 @@ class Engine:
         if entries_blocked:
             log.warning("Денний стоп-ліміт досягнуто (PnL=%.2f), нові входи заблоковано", pnl_today)
 
+        # Кеш і лічильник позицій оновлюємо в межах циклу, щоб кілька входів
+        # за один прохід не «перевитрачали» той самий депозит (баг «0.000000»).
+        cash_left = cash
+        open_count = len(open_pos)
         for symbol in self.cfg.symbols:
             try:
-                self._process_symbol(symbol, by_symbol.get(symbol), equity, cash,
-                                     len(open_pos), entries_blocked)
+                spent = self._process_symbol(symbol, by_symbol.get(symbol), equity, cash_left,
+                                             open_count, entries_blocked)
             except Exception:
                 log.exception("Помилка обробки символу %s", symbol)
+                spent = 0.0
+            if spent > 0:
+                cash_left = max(0.0, cash_left - spent / max(self.cfg.leverage, 1))
+                open_count += 1
 
-    def _process_symbol(self, symbol, position, equity, cash, open_count, entries_blocked):
+    def _process_symbol(self, symbol, position, equity, cash, open_count, entries_blocked) -> float:
+        """Повертає витрачену суму (notional) при відкритті позиції, інакше 0.0."""
         candles = self.market.fetch_ohlcv(symbol)
         if len(candles) < warmup_bars(self.cfg) + 2:
             log.info("%s: замало свічок (%d)", symbol, len(candles))
-            return
+            return 0.0
         # Остання свічка може бути ще незакритою — відкидаємо для сигналу.
         closed = candles[:-1]
         signal = self.strategy.evaluate(closed)
@@ -74,35 +86,36 @@ class Engine:
 
         if position:
             self._manage_open(position, signal, price)
-            return
+            return 0.0
 
         if entries_blocked:
-            return
+            return 0.0
         # Визначаємо бік входу: buy → long; sell → short (лише якщо дозволено).
         if signal.action == "buy":
             side = "long"
         elif signal.action == "sell" and self.cfg.allow_shorts:
             side = "short"
         else:
-            return
+            return 0.0
         if open_count >= self.cfg.max_open_positions:
             log.info("%s: ліміт відкритих позицій (%d)", symbol, self.cfg.max_open_positions)
-            return
+            return 0.0
 
         # Фільтр тренду: входимо лише за напрямом довгої EMA.
         trend = trend_direction(self.cfg, [c[4] for c in closed])[-1]
         if not entry_allowed(self.cfg, trend, side):
             log.info("%s: вхід %s заблоковано фільтром тренду (%s)", symbol, side, trend)
-            return
+            return 0.0
 
         sl, tp = signal.levels(self.cfg, side)
         if sl is None:
-            return
+            return 0.0
         qty = risk.position_size(equity, cash, price, sl, self.cfg.risk_per_trade,
                                  side=side, leverage=self.cfg.leverage)
-        if qty <= 0:
-            log.info("%s: нульовий розмір позиції (мало кешу/ризику)", symbol)
-            return
+        notional = qty * price
+        if qty <= 0 or notional < MIN_NOTIONAL_USD:
+            log.info("%s: замалий розмір позиції (%.2f$) — пропускаємо", symbol, notional)
+            return 0.0
 
         pos_id = self.broker.open(symbol, side, qty, price, sl, tp, signal.reason)
         if pos_id:
@@ -113,6 +126,8 @@ class Engine:
                 f"SL: {sl:.4f}  TP: {tp:.4f}\n"
                 f"Привід: {signal.reason}\nРежим: {self.broker.mode}"
             )
+            return notional
+        return 0.0
 
     def _manage_open(self, position, signal, price):
         side = position["side"]

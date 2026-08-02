@@ -7,7 +7,8 @@ from __future__ import annotations
 
 
 def position_size(equity: float, cash: float, entry: float, stop_loss: float,
-                  risk_per_trade: float, side: str = "long", leverage: int = 1) -> float:
+                  risk_per_trade: float, side: str = "long", leverage: int = 1,
+                  max_notional: float | None = None) -> float:
     """
     Скільки одиниць активу взяти, щоб при спрацюванні стоп-лоссу
     втратити не більше risk_per_trade від капіталу.
@@ -15,7 +16,10 @@ def position_size(equity: float, cash: float, entry: float, stop_loss: float,
         ризик_на_одиницю = |entry - stop_loss|
         qty = (equity * risk_per_trade) / ризик_на_одиницю
 
-    Додатково обмежуємо доступною купівельною спроможністю (cash * leverage).
+    Розмір обмежуємо трьома стелями:
+      - купівельною спроможністю (cash * leverage);
+      - max_notional — часткою капіталу на одну позицію (щоб перша угода
+        не «з'їдала» весь депозит і вистачало на інші пари).
     Для long стоп має бути нижче входу, для short — вище. Інакше 0.
     """
     if entry <= 0 or stop_loss <= 0:
@@ -28,8 +32,10 @@ def position_size(equity: float, cash: float, entry: float, stop_loss: float,
     if risk_per_unit <= 0:
         return 0.0
     qty = (equity * risk_per_trade) / risk_per_unit
-    max_qty_by_buying_power = (cash * max(leverage, 1)) / entry
-    return max(0.0, min(qty, max_qty_by_buying_power))
+    qty = min(qty, (cash * max(leverage, 1)) / entry)
+    if max_notional and max_notional > 0:
+        qty = min(qty, max_notional / entry)
+    return max(0.0, qty)
 
 
 def pnl(side: str, entry: float, exit_price: float, qty: float) -> float:
