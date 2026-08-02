@@ -30,6 +30,10 @@ services:
         value: 1h                  # вищий таймфрейм = менше шуму/хибних сигналів
       - key: TRADE_STRATEGY
         value: macd                # активніша за ema_rsi: входить на кожному кросовері MACD
+      - key: TRADE_MARKET_TYPE
+        value: swap                # ф'ючерси: позиція може бути більшою за баланс (плече)
+      - key: TRADE_LEVERAGE
+        value: "3"                 # 3× → позиція ~$3000 на $1000 → ~$30/угода. Стоп −1.5% задовго до ліквідації (−33%)
       - key: TRADE_PAPER_BALANCE
         value: "1000"
       - key: TRADE_RISK_PER_TRADE
