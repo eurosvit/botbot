@@ -59,11 +59,14 @@ def run(cfg: TradingConfig, symbol: str, candles: list[list[float]]) -> dict:
 
     def close_pos(exit_price: float, reason: str) -> None:
         nonlocal cash, position
-        p = pnl(position["side"], position["entry"], exit_price, position["qty"])
+        gross = pnl(position["side"], position["entry"], exit_price, position["qty"])
+        # Комісія біржі на вхід і вихід (round-trip) — щоб оптимізувати ЧИСТИЙ результат.
+        fee = cfg.fee_rate * position["qty"] * (position["entry"] + exit_price)
+        p = gross - fee
         cash += p
         notional = position["qty"] * position["entry"]
         trades.append({"pnl": p, "pnl_pct": (p / notional * 100) if notional else 0.0,
-                       "reason": reason, "side": position["side"]})
+                       "fee": fee, "reason": reason, "side": position["side"]})
         position = None
 
     for i in range(warmup, len(candles)):

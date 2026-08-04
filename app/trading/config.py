@@ -40,6 +40,7 @@ class TradingConfig:
 
     # --- Капітал ---
     paper_balance: float          # стартовий віртуальний баланс для paper-режиму
+    fee_rate: float               # комісія біржі на одну операцію (0.0005 = 0.05%), береться і на вхід, і на вихід
 
     # --- Стратегія ---
     strategy: str                 # ema_rsi | macd | bollinger | donchian
@@ -89,6 +90,7 @@ class TradingConfig:
             leverage=_i("TRADE_LEVERAGE", "1"),
             allow_shorts=_b("TRADE_ALLOW_SHORTS", shorts_default),
             paper_balance=_f("TRADE_PAPER_BALANCE", "1000"),
+            fee_rate=_f("TRADE_FEE_RATE", "0.0005"),
             strategy=os.getenv("TRADE_STRATEGY", "ema_rsi").strip().lower(),
             ema_fast=_i("TRADE_EMA_FAST", "12"),
             ema_slow=_i("TRADE_EMA_SLOW", "26"),

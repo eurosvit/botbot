@@ -83,12 +83,15 @@ class PaperBroker:
         qty = float(pos["qty"])
         entry = float(pos["entry_price"])
         side = pos["side"]
-        p = risk.pnl(side, entry, price, qty)
+        gross = risk.pnl(side, entry, price, qty)
+        # Комісія біржі береться і на вхід, і на вихід (round-trip).
+        fee = self.cfg.fee_rate * qty * (entry + price)
+        p = gross - fee
         pnl_pct = (p / (qty * entry) * 100.0) if entry and qty else 0.0
-        store.close_position(pos["id"], price, p, pnl_pct, reason)
-        log.info("PAPER CLOSE %s %s qty=%.6f @ %.2f pnl=%.2f (%.2f%%)",
-                 side, pos["symbol"], qty, price, p, pnl_pct)
-        return {"pnl": p, "pnl_pct": pnl_pct}
+        store.close_position(pos["id"], price, p, pnl_pct, reason, fee)
+        log.info("PAPER CLOSE %s %s qty=%.6f @ %.2f pnl=%.2f fee=%.2f (%.2f%%)",
+                 side, pos["symbol"], qty, price, p, fee, pnl_pct)
+        return {"pnl": p, "pnl_pct": pnl_pct, "fee": fee}
 
 
 class LiveBroker:
@@ -144,12 +147,14 @@ class LiveBroker:
         order = (self.market.create_market_sell(pos["symbol"], qty, reduce_only=reduce_only) if side == "long"
                  else self.market.create_market_buy(pos["symbol"], qty, reduce_only=reduce_only))
         fill = float(order.get("average") or order.get("price") or price)
-        p = risk.pnl(side, entry, fill, qty)
+        gross = risk.pnl(side, entry, fill, qty)
+        fee = self.cfg.fee_rate * qty * (entry + fill)
+        p = gross - fee
         pnl_pct = (p / (qty * entry) * 100.0) if entry and qty else 0.0
-        store.close_position(pos["id"], fill, p, pnl_pct, reason)
-        log.info("LIVE CLOSE %s %s qty=%.6f @ %.2f pnl=%.2f (%.2f%%)",
-                 side, pos["symbol"], qty, fill, p, pnl_pct)
-        return {"pnl": p, "pnl_pct": pnl_pct}
+        store.close_position(pos["id"], fill, p, pnl_pct, reason, fee)
+        log.info("LIVE CLOSE %s %s qty=%.6f @ %.2f pnl=%.2f fee=%.2f (%.2f%%)",
+                 side, pos["symbol"], qty, fill, p, fee, pnl_pct)
+        return {"pnl": p, "pnl_pct": pnl_pct, "fee": fee}
 
 
 def make_broker(cfg: TradingConfig, market: Market):

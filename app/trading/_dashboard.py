@@ -99,9 +99,9 @@ DASHBOARD_HTML = r"""<!doctype html>
     <table id="tradesTable">
       <thead><tr>
         <th>Пара</th><th>К-сть</th><th>Вхід</th><th>Вихід</th>
-        <th>PnL</th><th>%</th><th>Причина</th><th>Закрито</th>
+        <th>PnL</th><th>%</th><th>Комісія</th><th>Причина</th><th>Закрито</th>
       </tr></thead>
-      <tbody><tr><td colspan="8" class="empty">завантаження…</td></tr></tbody>
+      <tbody><tr><td colspan="9" class="empty">завантаження…</td></tr></tbody>
     </table>
   </div>
   <p class="muted">Оновлюється автоматично кожні 15 c. Дані: paper/live режим бота.</p>
@@ -179,12 +179,13 @@ function renderChart(eq) {
 
 function renderTrades(tr) {
   const tb = document.querySelector("#tradesTable tbody");
-  if (!tr.length) { tb.innerHTML = `<tr><td colspan="8" class="empty">ще немає закритих угод</td></tr>`; return; }
+  if (!tr.length) { tb.innerHTML = `<tr><td colspan="9" class="empty">ще немає закритих угод</td></tr>`; return; }
   tb.innerHTML = tr.map(t => `<tr>
     <td>${t.symbol}</td><td>${fmt(t.qty,4)}</td><td>${fmt(t.entry_price)}</td>
     <td>${fmt(t.exit_price)}</td>
     <td class="${cls(t.pnl)}">${(t.pnl>0?"+":"")+fmt(t.pnl)}</td>
     <td class="${cls(t.pnl_pct)}">${(t.pnl_pct>0?"+":"")+fmt(t.pnl_pct)}%</td>
+    <td class="muted">${fmt(t.fee!=null?t.fee:0)}</td>
     <td>${t.reason_close||""}</td>
     <td>${t.closed_at ? new Date(t.closed_at).toLocaleString("uk-UA",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}) : ""}</td>
   </tr>`).join("");

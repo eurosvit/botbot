@@ -40,6 +40,7 @@ def migrate_trading() -> None:
             )
         """))
         c.execute(text("ALTER TABLE trade_positions ADD COLUMN IF NOT EXISTS strategy TEXT"))
+        c.execute(text("ALTER TABLE trade_positions ADD COLUMN IF NOT EXISTS fee NUMERIC DEFAULT 0"))
         c.execute(text("CREATE INDEX IF NOT EXISTS idx_pos_status ON trade_positions(status)"))
         c.execute(text("CREATE INDEX IF NOT EXISTS idx_pos_symbol ON trade_positions(symbol)"))
 
@@ -80,17 +81,18 @@ def open_position(p: dict) -> int:
         return int(row.scalar_one())
 
 
-def close_position(pos_id: int, exit_price: float, pnl: float, pnl_pct: float, reason: str) -> None:
+def close_position(pos_id: int, exit_price: float, pnl: float, pnl_pct: float, reason: str,
+                   fee: float = 0.0) -> None:
     eng = get_engine()
     with eng.begin() as c:
         c.execute(text("""
             UPDATE trade_positions
                SET status='closed', exit_price=:exit_price, pnl=:pnl, pnl_pct=:pnl_pct,
-                   reason_close=:reason, closed_at=:closed_at
+                   fee=:fee, reason_close=:reason, closed_at=:closed_at
              WHERE id=:id
         """), {
             "id": pos_id, "exit_price": exit_price, "pnl": pnl, "pnl_pct": pnl_pct,
-            "reason": reason, "closed_at": datetime.now(timezone.utc),
+            "fee": fee, "reason": reason, "closed_at": datetime.now(timezone.utc),
         })
 
 

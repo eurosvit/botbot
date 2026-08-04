@@ -156,6 +156,7 @@ class Engine:
                 f"{emoji} <b>CLOSE {side.upper()}</b> {position['symbol']}\n"
                 f"Ціна: {price:.4f}\n"
                 f"PnL: {res['pnl']:.2f} ({res['pnl_pct']:.2f}%)\n"
+                f"Комісія: {res.get('fee', 0.0):.2f}\n"
                 f"Причина: {reason}\nРежим: {self.broker.mode}"
             )
 

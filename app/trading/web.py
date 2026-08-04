@@ -160,7 +160,7 @@ def trades_json():
             params["d"] = _days()
         with eng.begin() as c:
             rows = c.execute(text(f"""
-                SELECT symbol, side, qty, entry_price, exit_price, pnl, pnl_pct,
+                SELECT symbol, side, qty, entry_price, exit_price, pnl, pnl_pct, fee,
                        reason_close, opened_at, closed_at
                   FROM trade_positions
                  WHERE status='closed' AND mode=:mode{flt}
@@ -174,6 +174,7 @@ def trades_json():
             "exit_price": float(r["exit_price"]) if r["exit_price"] is not None else None,
             "pnl": float(r["pnl"]) if r["pnl"] is not None else None,
             "pnl_pct": float(r["pnl_pct"]) if r["pnl_pct"] is not None else None,
+            "fee": float(r["fee"]) if r["fee"] is not None else 0.0,
             "reason_close": r["reason_close"],
             "closed_at": r["closed_at"].isoformat() if r["closed_at"] else None,
         } for r in rows])
