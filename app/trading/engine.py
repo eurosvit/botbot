@@ -119,11 +119,12 @@ class Engine:
 
         pos_id = self.broker.open(symbol, side, qty, price, sl, tp, signal.reason)
         if pos_id:
-            emoji = "🟢" if side == "long" else "🔴"
+            arrow = "⬆️" if side == "long" else "⬇️"
             self.notifier.send(
-                f"{emoji} <b>{'LONG' if side == 'long' else 'SHORT'}</b> {symbol}\n"
-                f"Ціна: {price:.4f}\nК-сть: {qty:.6f}\n"
-                f"SL: {sl:.4f}  TP: {tp:.4f}\n"
+                f"▶️ <b>ВІДКРИТО {'LONG' if side == 'long' else 'SHORT'} {arrow}</b>\n"
+                f"{symbol}\n"
+                f"Ціна входу: {price:.4f}\nК-сть: {qty:.6f}\n"
+                f"🛑 SL: {sl:.4f}   🎯 TP: {tp:.4f}\n"
                 f"Привід: {signal.reason}\nРежим: {self.broker.mode}"
             )
             return notional
@@ -151,11 +152,14 @@ class Engine:
 
         if reason:
             res = self.broker.close(position, price, reason)
-            emoji = "✅" if res["pnl"] >= 0 else "🔻"
+            win = res["pnl"] >= 0
+            head = "✅ <b>ПРИБУТОК</b>" if win else "❌ <b>ЗБИТОК</b>"
+            money = "💰" if win else "💸"
             self.notifier.send(
-                f"{emoji} <b>CLOSE {side.upper()}</b> {position['symbol']}\n"
-                f"Ціна: {price:.4f}\n"
-                f"PnL: {res['pnl']:.2f} ({res['pnl_pct']:.2f}%)\n"
+                f"{head} · закрито {side.upper()}\n"
+                f"{position['symbol']}\n"
+                f"Ціна виходу: {price:.4f}\n"
+                f"{money} PnL: {res['pnl']:+.2f} ({res['pnl_pct']:+.2f}%)\n"
                 f"Комісія: {res.get('fee', 0.0):.2f}\n"
                 f"Причина: {reason}\nРежим: {self.broker.mode}"
             )
