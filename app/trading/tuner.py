@@ -70,8 +70,9 @@ def _walk_forward_one(base: TradingConfig, name: str, symbol: str, candles: list
             continue
         cfg2 = replace(base, strategy=name, **c["params"])
         oos_r = run(cfg2, symbol, oos)
-        # …І ПІДТВЕРДИТИСЬ на out-of-sample:
-        if oos_r["trades"] < 3 or oos_r["total_return_pct"] <= 0 or oos_r["max_drawdown_pct"] > 15:
+        # …І ПІДТВЕРДИТИСЬ на out-of-sample (пріоритет стабільності: DD ≤ 10%, win ≥ 55%):
+        if (oos_r["trades"] < 3 or oos_r["total_return_pct"] <= 0
+                or oos_r["max_drawdown_pct"] > 10 or oos_r["win_rate"] < 55):
             continue
         cand = {"strategy": name, "params": c["params"],
                 "is_win": c["win_rate"], "is_return": c["total_return_pct"],

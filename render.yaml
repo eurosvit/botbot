@@ -24,21 +24,25 @@ services:
         value: paper               # БЕЗ ризику: віртуальні гроші на реальних цінах
       - key: TRADE_EXCHANGE
         value: kraken              # Binance блокує US-IP Render (451); Kraken працює зі США
+      # КОНСЕРВАТИВНИЙ ПРОФІЛЬ (пріоритет — стабільність і 70%+ виграшних, рівна крива).
+      # Лише ліквідні майори (менше «пилкових» альтів); авто-тюнінг валідує саме на BTC.
       - key: TRADE_SYMBOLS
-        value: BTC/USDT,ETH/USDT,SOL/USDT,XRP/USDT,ADA/USDT,DOGE/USDT   # більше пар = більше сигналів (частіші угоди)
+        value: BTC/USDT,ETH/USDT
       - key: TRADE_TIMEFRAME
         value: 1h                  # вищий таймфрейм = менше шуму/хибних сигналів
       - key: TRADE_STRATEGY
         value: macd                # активніша за ema_rsi: входить на кожному кросовері MACD
       - key: TRADE_MARKET_TYPE
-        value: swap                # ф'ючерси: позиція може бути більшою за баланс (плече)
+        value: spot                # БЕЗ плеча: нуль ліквідації, м'якша крива
       - key: TRADE_LEVERAGE
-        value: "3"                 # 3× → позиція ~$3000 на $1000 → ~$30/угода. Стоп −1.5% задовго до ліквідації (−33%)
+        value: "1"                 # без плеча (spot вимагає 1)
       - key: TRADE_PAPER_BALANCE
         value: "1000"
       - key: TRADE_RISK_PER_TRADE
-        value: "0.05"              # 5% на угоду (агресивно; paper — реальними не ризикуємо)
+        value: "0.02"              # 2% на угоду — помірний ризик, менші просадки
       - key: TRADE_MAX_DAILY_LOSS_PCT
-        value: "0.2"               # денний стоп 20% (щоб 5%-ризик не блокувався одним програшем)
+        value: "0.06"              # денний стоп 6% — захист від серії програшів у боковику
+      - key: TRADE_ATR_TP_MULT
+        value: "1.5"               # вужчий тейк → вищий % виграшних (беремо прибуток швидше)
       - key: TRADE_NOTIFY
         value: "true"              # сповіщення про угоди в Telegram (потрібні TG_BOT_TOKEN/TG_CHAT_ID)
