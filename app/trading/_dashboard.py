@@ -248,7 +248,7 @@ async function loadFunding() {
     box.innerHTML = `
       <div style="line-height:1.7">
         <b>${f.base}</b> · ${f.exchange} (${f.symbol}) · ${f.window_days} дн, ${f.intervals} виплат<br>
-        Поточна ставка (8год): <b class="${cls(f.current_rate_pct)}">${fmt(f.current_rate_pct,4)}%</b>
+        Поточна ставка (${f.interval_hours}год): <b class="${cls(f.current_rate_pct)}">${fmt(f.current_rate_pct,4)}%</b>
         · середня: ${fmt(f.avg_rate_pct,4)}% · додатних: ${fmt(f.positive_share_pct,0)}%<br>
         📈 Річна дохідність (до комісій): <b class="${cls(apr)}">${(apr>0?"+":"")+fmt(apr)}% APR</b><br>
         За вікно чистими (−комісії ${fmt(f.round_trip_fee_pct,3)}%):

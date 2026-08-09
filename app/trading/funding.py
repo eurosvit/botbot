@@ -19,9 +19,9 @@ import logging
 
 log = logging.getLogger(__name__)
 
-# Стандартний інтервал funding у більшості бірж — 8 годин (3 рази на добу).
+# Інтервал funding РІЗНИЙ на біржах: Binance/Bybit/OKX — 8 год, Kraken — 1 год.
+# Тому реальний інтервал визначаємо з дат історії, а це — лише запасний дефолт.
 FUNDING_INTERVAL_HOURS = 8
-INTERVALS_PER_YEAR = (24 / FUNDING_INTERVAL_HOURS) * 365  # = 1095
 
 # Кандидати «біржа → символ perp». Пробуємо по черзі, поки якась віддасть дані
 # (Render має US-IP, тож набір підібрано з розрахунку на публічну доступність).
@@ -35,12 +35,14 @@ def _candidates(base: str) -> list[tuple[str, str]]:
     ]
 
 
-def simulate_carry(rates: list[float], fee_rate: float) -> dict:
+def simulate_carry(rates: list[float], fee_rate: float,
+                   interval_hours: float = FUNDING_INTERVAL_HOURS) -> dict:
     """Чиста математика cash-and-carry за наявними ставками funding.
 
-    rates — список ставок funding за інтервал (частка, напр. 0.0001 = 0.01%/8год),
-            з боку ШОРТА (додатна ставка = дохід шорта).
+    rates — список ставок funding за інтервал (частка), з боку ШОРТА
+            (додатна ставка = дохід шорта).
     fee_rate — комісія біржі на одну ногу однієї операції.
+    interval_hours — період між виплатами funding (визначається з дат історії).
 
     Комісії: відкриття = 2 ноги (спот buy + perp short), закриття = 2 ноги →
     разом 4 × fee_rate від notional (одноразово за весь період утримання).
@@ -48,17 +50,19 @@ def simulate_carry(rates: list[float], fee_rate: float) -> dict:
     n = len(rates)
     if n == 0:
         return {"intervals": 0, "reason": "немає даних funding"}
+    intervals_per_year = (24 / interval_hours) * 365
     total = sum(rates)
     avg = total / n
     positive = sum(1 for r in rates if r > 0)
     round_trip_fee = 4 * fee_rate                     # частка notional
-    window_days = n * FUNDING_INTERVAL_HOURS / 24
+    window_days = n * interval_hours / 24
     return {
         "intervals": n,
+        "interval_hours": round(interval_hours, 2),
         "window_days": round(window_days, 1),
-        "avg_rate_pct": avg * 100,                    # середня ставка за 8 год, %
+        "avg_rate_pct": avg * 100,                    # середня ставка за інтервал, %
         "positive_share_pct": positive / n * 100,     # частка інтервалів зі ставкою > 0
-        "apr_gross_pct": avg * INTERVALS_PER_YEAR * 100,        # річна дохідність до комісій
+        "apr_gross_pct": avg * intervals_per_year * 100,       # річна дохідність до комісій
         "window_gross_pct": total * 100,               # накопичено за вікно (до комісій)
         "window_net_pct": (total - round_trip_fee) * 100,      # за вікно чистими (−4 ноги комісії)
         "round_trip_fee_pct": round_trip_fee * 100,
@@ -83,7 +87,16 @@ def fetch_funding_history(base: str, fee_rate: float, days: int = 90) -> dict:
             if len(rates) < 5:
                 errors.append(f"{ex_name}: замало точок ({len(rates)})")
                 continue
-            res = simulate_carry(rates, fee_rate)
+            # Реальний інтервал funding — з медіани відступів між датами (Kraken=1год, інші=8год).
+            ts = [h["timestamp"] for h in hist if h.get("timestamp")]
+            interval_hours = FUNDING_INTERVAL_HOURS
+            if len(ts) >= 3:
+                ts.sort()
+                deltas = sorted(ts[i + 1] - ts[i] for i in range(len(ts) - 1))
+                median_ms = deltas[len(deltas) // 2]
+                if median_ms > 0:
+                    interval_hours = min(24.0, max(0.5, median_ms / 3_600_000))
+            res = simulate_carry(rates, fee_rate, interval_hours)
             res.update({"exchange": ex_name, "symbol": symbol, "base": base})
             try:
                 res["current_rate_pct"] = float(
