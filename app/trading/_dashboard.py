@@ -95,11 +95,6 @@ DASHBOARD_HTML = r"""<!doctype html>
   </div>
 
   <div class="panel">
-    <div class="label muted">🧪 Фандинг-арбітраж (експеримент · нейтральна стратегія, не напрямна)</div>
-    <div id="fundingBox" class="muted" style="margin-top:8px">завантаження даних funding…</div>
-  </div>
-
-  <div class="panel">
     <div class="label muted">Останні закриті угоди</div>
     <table id="tradesTable">
       <thead><tr>
@@ -239,27 +234,7 @@ document.querySelectorAll("#periods button").forEach(b => b.addEventListener("cl
   load();
 }));
 
-async function loadFunding() {
-  const box = document.getElementById("fundingBox");
-  try {
-    const f = await fetch("funding.json").then(r=>r.json());
-    if (!f.intervals) { box.textContent = "⚠️ " + (f.reason || "немає даних funding"); return; }
-    const apr = f.apr_gross_pct, net = f.window_net_pct;
-    box.innerHTML = `
-      <div style="line-height:1.7">
-        <b>${f.base}</b> · ${f.exchange} (${f.symbol}) · ${f.window_days} дн, ${f.intervals} виплат<br>
-        Поточна ставка (${f.interval_hours}год): <b class="${cls(f.current_rate_pct)}">${fmt(f.current_rate_pct,4)}%</b>
-        · середня: ${fmt(f.avg_rate_pct,4)}% · додатних: ${fmt(f.positive_share_pct,0)}%<br>
-        📈 Річна дохідність (до комісій): <b class="${cls(apr)}">${(apr>0?"+":"")+fmt(apr)}% APR</b><br>
-        За вікно чистими (−комісії ${fmt(f.round_trip_fee_pct,3)}%):
-        <b class="${cls(net)}">${(net>0?"+":"")+fmt(net)}%</b>
-        <div class="muted" style="margin-top:6px">Нейтрально до ціни: спот +${f.base} / шорт perp. Оцінка зверху — реальне виконання має ще спред і проковзування.</div>
-      </div>`;
-  } catch(e) { box.textContent = "⚠️ помилка: " + (e.message||e); }
-}
-
 load();
-loadFunding();
 setInterval(load, 60000);   // рідше оновлення — щадимо безкоштовну БД
 </script>
 </body>

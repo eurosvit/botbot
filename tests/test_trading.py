@@ -276,18 +276,6 @@ def test_optimizer():
           f"угод={best['trades']} params={best['params']}")
 
 
-def test_funding():
-    print("funding-arbitrage:")
-    from app.trading.funding import simulate_carry
-    r = simulate_carry([0.0001] * 270, 0.0005)   # 0.01%/8год, 90 днів
-    check("APR ≈ 10.95%", abs(r["apr_gross_pct"] - 10.95) < 0.1)
-    check("чисте за вікно = gross − 0.2% комісій", abs(r["window_net_pct"] - 2.5) < 1e-6)
-    check("частка додатних = 100%", r["positive_share_pct"] == 100.0)
-    check("порожні дані => reason", "reason" in simulate_carry([], 0.0005))
-    neg = simulate_carry([-0.0002] * 100, 0.0005)
-    check("негативний funding => мінус", neg["apr_gross_pct"] < 0 and neg["window_net_pct"] < 0)
-
-
 def main():
     print("=" * 50)
     print("ТЕСТИ ТОРГОВОГО МОДУЛЯ (офлайн)")
@@ -303,7 +291,6 @@ def main():
     test_walk_forward()
     test_report()
     test_optimizer()
-    test_funding()
     print("-" * 50)
     print(f"Результат: {PASS} пройдено, {FAIL} провалено")
     sys.exit(1 if FAIL else 0)

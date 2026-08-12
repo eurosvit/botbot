@@ -183,21 +183,6 @@ def trades_json():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-@bp.route("/funding.json", methods=["GET"])
-def funding_json():
-    """Аналіз фандинг-арбітражу на реальних даних (нейтральна стратегія)."""
-    try:
-        from . import funding
-        cfg = TradingConfig.from_env()
-        default_base = cfg.symbols[0].split("/")[0] if cfg.symbols else "BTC"
-        base = (request.args.get("base") or default_base).upper()
-        days = _days() or 90
-        return jsonify(funding.fetch_funding_history(base, cfg.fee_rate, days=days))
-    except Exception as e:
-        log.exception("funding.json error")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
 def format_daily_summary(stats: dict, cfg: TradingConfig, day: str) -> str:
     """Текст щоденного підсумку для Telegram."""
     eq = stats["equity"]
