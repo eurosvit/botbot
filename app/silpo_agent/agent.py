@@ -55,6 +55,12 @@ MCP «Сільпо».
 - Нічого не оформлюй остаточно: доведи кошик до готовності та дай
   посилання на чекаут — фінальний клік за користувачем.
 
+Економія та лояльність:
+- Коли доречно, порівнюй два види вигоди в гривнях: економію від знижок
+  та нарахування/списання балабонусів — і кажи, що вигідніше.
+- Збираючи кошик з доставкою, одразу перевіряй найближчі тайм-слоти та
+  пропонуй найранішній доступний.
+
 У фінальній відповіді дай: список позицій (назва, ціна, кількість, позначки
 акцій/замін), орієнтовну суму, посилання на чекаут (якщо кошик зібрано)
 та 1-2 корисні поради. Не вигадуй товари й ціни — лише дані з інструментів;
@@ -89,15 +95,21 @@ def mcp_tools_to_anthropic(tools):
 
 class SilpoAgent:
     def __init__(self, mcp_client=None, anthropic_client=None, model=MODEL,
-                 confirm_write=None, read_only=False, audit=None):
+                 confirm_write=None, read_only=False, audit=None, prefs=None):
         """confirm_write(name, args) -> bool — підтвердження write-дій.
 
         Якщо колбек не задано, write-дії дозволені (зручно для тестів);
         read_only=True блокує їх повністю незалежно від колбека.
+        prefs — UserPrefs: персональні преференції, додаються в промпт.
         """
         self.mcp = mcp_client or SilpoMCPClient()
         self.client = anthropic_client or anthropic.Anthropic()
         self.model = model
+        self.system = SYSTEM_PROMPT
+        if prefs is not None:
+            block = prefs.render_for_prompt()
+            if block:
+                self.system = SYSTEM_PROMPT + "\n" + block + "\n"
         self.confirm_write = confirm_write
         self.read_only = read_only
         self.audit = audit or AuditLog()
@@ -111,7 +123,7 @@ class SilpoAgent:
                 return self.client.beta.messages.create(
                     model=self.model,
                     max_tokens=MAX_TOKENS,
-                    system=SYSTEM_PROMPT,
+                    system=self.system,
                     tools=tools,
                     messages=messages,
                     betas=["server-side-fallback-2026-07-01"],
@@ -124,7 +136,7 @@ class SilpoAgent:
         return self.client.messages.create(
             model=self.model,
             max_tokens=MAX_TOKENS,
-            system=SYSTEM_PROMPT,
+            system=self.system,
             tools=tools,
             messages=messages,
         )

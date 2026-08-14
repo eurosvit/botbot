@@ -1,6 +1,8 @@
 """Тести silpo_agent без мережі: транспорт MCP і агентний цикл на моках."""
 
 import json
+import os
+import tempfile
 import unittest
 from unittest import mock
 
@@ -12,6 +14,7 @@ from app.silpo_agent.agent import (
     mcp_tools_to_anthropic,
 )
 from app.silpo_agent.guardrails import is_write_tool
+from app.silpo_agent.preferences import UserPrefs
 
 
 def fake_response(payload=None, *, sse=False, status=200, headers=None):
@@ -109,6 +112,47 @@ class TestGuardrails(unittest.TestCase):
     def test_unknown_verb_is_conservative(self):
         # Невідоме перше дієслово -> вважаємо write
         self.assertTrue(is_write_tool("zpakuvatyKoshyk"))
+
+
+class TestPreferences(unittest.TestCase):
+    def setUp(self):
+        fd, self.path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        os.unlink(self.path)
+
+    def tearDown(self):
+        if os.path.exists(self.path):
+            os.unlink(self.path)
+
+    def test_roundtrip(self):
+        prefs = UserPrefs(path=self.path)
+        prefs.watch("Сир козиний")
+        prefs.ban_brand("БрендХ")
+        prefs.data["hide_np_only"] = True
+        prefs.save()
+
+        reloaded = UserPrefs(path=self.path)
+        self.assertEqual(reloaded.data["watchlist"], ["Сир козиний"])
+        self.assertEqual(reloaded.data["banned_brands"], ["БрендХ"])
+        self.assertTrue(reloaded.data["hide_np_only"])
+
+    def test_render_for_prompt(self):
+        prefs = UserPrefs(path=self.path)
+        prefs.ban_brand("БрендХ")
+        prefs.data["hide_np_only"] = True
+        block = prefs.render_for_prompt()
+        self.assertIn("БрендХ", block)
+        self.assertIn("Новою Поштою", block)
+
+    def test_empty_prefs_render_empty(self):
+        self.assertEqual(UserPrefs(path=self.path).render_for_prompt(), "")
+
+    def test_prefs_injected_into_agent_system(self):
+        prefs = UserPrefs(path=self.path)
+        prefs.ban_brand("БрендХ")
+        agent = SilpoAgent(mcp_client=mock.Mock(), anthropic_client=mock.Mock(),
+                           prefs=prefs)
+        self.assertIn("БрендХ", agent.system)
 
 
 class TestToolConversion(unittest.TestCase):
