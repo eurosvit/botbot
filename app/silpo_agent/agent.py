@@ -2,8 +2,13 @@
 
 Сценарій для хакатону Silpo AI Factory: користувач пише природною мовою
 ("зберу вечерю на 4 особи до 600 грн", "знайди інгредієнти для борщу"),
-агент через MCP-інструменти Сільпо шукає товари, порівнює акції та формує
-готовий кошик зі списком і підсумковою вартістю.
+агент через MCP-інструменти Сільпо шукає товари (включно з пакетним пошуком
+до 30 позицій і замінами відсутніх), збирає кошик і доводить до посилання
+на чекаут.
+
+Guardrails (див. guardrails.py): write-інструменти (кошик, доставка,
+балабонуси, промокоди) виконуються лише після підтвердження користувача;
+є read-only режим; усі виклики пишуться в аудит-лог.
 
 Реалізовано ручним агентним циклом Anthropic Messages API, бо MCP-транспорт
 у нас власний (SilpoMCPClient поверх requests). Схеми інструментів беруться
@@ -14,13 +19,14 @@ import logging
 
 import anthropic
 
+from app.silpo_agent.guardrails import AuditLog, is_write_tool
 from app.silpo_agent.mcp_client import MCPError, SilpoMCPClient
 
 log = logging.getLogger(__name__)
 
 MODEL = "claude-opus-5"
 MAX_TOKENS = 16000
-MAX_TURNS = 20
+MAX_TURNS = 30
 
 SYSTEM_PROMPT = """\
 Ти — «Смарт-кошик Сільпо», асистент покупця мережі «Сільпо» (Україна).
@@ -28,17 +34,41 @@ SYSTEM_PROMPT = """\
 зібрати практичний кошик покупок, користуючись інструментами офіційного
 MCP «Сільпо».
 
-Правила роботи:
+Як працювати з інструментами:
 - Спершу з'ясуй з запиту страви/потреби та склади список інгредієнтів.
-- Шукай реальні товари через інструменти MCP; віддавай перевагу акційним
-  позиціям, коли якість порівнянна.
+- Для списків використовуй пакетний пошук (до 30 товарів одним викликом),
+  а не окремий виклик на кожну позицію.
+- Якщо товару немає в наявності — скористайся інструментом підбору замін
+  і чесно познач заміну у відповіді.
+- Віддавай перевагу акційним позиціям, коли якість порівнянна; акції та
+  добірки є в інструментах каталогу.
 - Дотримуйся бюджету, якщо його вказано; якщо не вкладаєшся — запропонуй
-  заміни та чесно скажи, що прибрав.
-- У фінальній відповіді дай: список позицій (назва, ціна, кількість),
-  орієнтовну суму та 1-2 корисні поради (акції, доставка).
-- Не вигадуй товари й ціни — лише дані з інструментів. Якщо інструмент
-  повернув помилку, скажи про це прямо.
+  заміни та скажи, що прибрав.
+
+Правила безпеки (важливо):
+- Дії, що змінюють стан (додати в кошик, змінити доставку, застосувати
+  промокод чи балабонуси, оформити замовлення), виконуй ЛИШЕ якщо
+  користувач явно про це попросив. Балабонуси й купони ніколи не списуй
+  за власною ініціативою.
+- Кожна така дія проходить через підтвердження користувача. Якщо
+  користувач відхилив дію — не повторюй її, запропонуй альтернативу.
+- Нічого не оформлюй остаточно: доведи кошик до готовності та дай
+  посилання на чекаут — фінальний клік за користувачем.
+
+У фінальній відповіді дай: список позицій (назва, ціна, кількість, позначки
+акцій/замін), орієнтовну суму, посилання на чекаут (якщо кошик зібрано)
+та 1-2 корисні поради. Не вигадуй товари й ціни — лише дані з інструментів;
+якщо інструмент повернув помилку, скажи про це прямо.
 """
+
+DECLINED_RESULT = (
+    "Користувач НЕ підтвердив цю дію. Не повторюй її; запитай, "
+    "що змінити, або запропонуй альтернативу."
+)
+READ_ONLY_RESULT = (
+    "Дію заблоковано: агент працює в режимі read-only і не може змінювати "
+    "кошик, доставку чи лояльність. Повідом про це користувача."
+)
 
 
 def mcp_tools_to_anthropic(tools):
@@ -58,10 +88,19 @@ def mcp_tools_to_anthropic(tools):
 
 
 class SilpoAgent:
-    def __init__(self, mcp_client=None, anthropic_client=None, model=MODEL):
+    def __init__(self, mcp_client=None, anthropic_client=None, model=MODEL,
+                 confirm_write=None, read_only=False, audit=None):
+        """confirm_write(name, args) -> bool — підтвердження write-дій.
+
+        Якщо колбек не задано, write-дії дозволені (зручно для тестів);
+        read_only=True блокує їх повністю незалежно від колбека.
+        """
         self.mcp = mcp_client or SilpoMCPClient()
         self.client = anthropic_client or anthropic.Anthropic()
         self.model = model
+        self.confirm_write = confirm_write
+        self.read_only = read_only
+        self.audit = audit or AuditLog()
         # Server-side fallback: якщо класифікатори Claude Opus 5 відхилять
         # запит, його автоматично повторить рекомендована fallback-модель.
         self._use_fallbacks = True
@@ -90,14 +129,39 @@ class SilpoAgent:
             messages=messages,
         )
 
+    def _execute_tool(self, name, arguments, description=""):
+        """Виконує інструмент з урахуванням guardrails.
+
+        Повертає (текст_результату, is_error).
+        """
+        write = is_write_tool(name, description)
+        if write and self.read_only:
+            self.audit.record(name, arguments, write=True, allowed=False,
+                              note="read-only mode")
+            return READ_ONLY_RESULT, True
+        if write and self.confirm_write and not self.confirm_write(name, arguments):
+            self.audit.record(name, arguments, write=True, allowed=False,
+                              note="declined by user")
+            return DECLINED_RESULT, False
+        try:
+            result = self.mcp.call_tool(name, arguments)
+            self.audit.record(name, arguments, write=write, allowed=True)
+            return result, False
+        except MCPError as e:
+            self.audit.record(name, arguments, write=write, allowed=True,
+                              note=f"error: {e}")
+            return f"Помилка інструмента: {e}", True
+
     def run(self, user_request, on_tool_call=None):
         """Виконує запит користувача; повертає фінальний текст відповіді.
 
         on_tool_call(name, args, result) — необов'язковий колбек для логів/демо.
         """
-        tools = mcp_tools_to_anthropic(self.mcp.list_tools())
-        if not tools:
+        mcp_tools = self.mcp.list_tools()
+        if not mcp_tools:
             raise MCPError("MCP-сервер не повернув жодного інструмента (tools/list)")
+        descriptions = {t["name"]: t.get("description", "") for t in mcp_tools}
+        tools = mcp_tools_to_anthropic(mcp_tools)
         messages = [{"role": "user", "content": user_request}]
 
         for _ in range(MAX_TURNS):
@@ -119,12 +183,9 @@ class SilpoAgent:
             for block in response.content:
                 if block.type != "tool_use":
                     continue
-                try:
-                    result = self.mcp.call_tool(block.name, block.input)
-                    is_error = False
-                except MCPError as e:
-                    result = f"Помилка інструмента: {e}"
-                    is_error = True
+                result, is_error = self._execute_tool(
+                    block.name, block.input, descriptions.get(block.name, "")
+                )
                 if on_tool_call:
                     on_tool_call(block.name, block.input, result)
                 tool_results.append(

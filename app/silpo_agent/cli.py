@@ -36,6 +36,12 @@ def main(argv=None):
                         help="JSON-аргументи для --call")
     parser.add_argument("--telegram", action="store_true",
                         help="надіслати фінальну відповідь у Telegram")
+    parser.add_argument("--read-only", action="store_true",
+                        help="заборонити write-дії (кошик, доставка, бонуси)")
+    parser.add_argument("--yes", action="store_true",
+                        help="автопідтвердження write-дій (для демо/CI)")
+    parser.add_argument("--audit", metavar="FILE",
+                        help="писати аудит-лог викликів у файл (JSON lines)")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -54,12 +60,25 @@ def main(argv=None):
         return 0
 
     from app.silpo_agent.agent import SilpoAgent  # import тут: потребує anthropic
+    from app.silpo_agent.guardrails import AuditLog
 
     def show_tool_call(name, tool_input, result):
         print(f"→ {name}({json.dumps(tool_input, ensure_ascii=False)})")
         print(f"  {result[:200].replace(chr(10), ' ')}…")
 
-    agent = SilpoAgent(mcp_client=mcp)
+    def confirm_write(name, tool_input):
+        if args.yes:
+            return True
+        prompt = (f"⚠ Агент хоче виконати write-дію: {name}"
+                  f"({json.dumps(tool_input, ensure_ascii=False)}). Дозволити? [y/N] ")
+        return input(prompt).strip().lower() in ("y", "yes", "так", "т")
+
+    agent = SilpoAgent(
+        mcp_client=mcp,
+        confirm_write=confirm_write,
+        read_only=args.read_only,
+        audit=AuditLog(path=args.audit),
+    )
     answer = agent.run(args.request, on_tool_call=show_tool_call)
     print("\n" + "=" * 60)
     print(answer)

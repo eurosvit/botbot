@@ -5,7 +5,13 @@ import unittest
 from unittest import mock
 
 from app.silpo_agent.mcp_client import MCPError, SilpoMCPClient
-from app.silpo_agent.agent import SilpoAgent, mcp_tools_to_anthropic
+from app.silpo_agent.agent import (
+    DECLINED_RESULT,
+    READ_ONLY_RESULT,
+    SilpoAgent,
+    mcp_tools_to_anthropic,
+)
+from app.silpo_agent.guardrails import is_write_tool
 
 
 def fake_response(payload=None, *, sse=False, status=200, headers=None):
@@ -87,6 +93,24 @@ class TestMCPClient(unittest.TestCase):
         self.assertIn("SILPO_MCP_TOKEN", str(ctx.exception))
 
 
+class TestGuardrails(unittest.TestCase):
+    def test_read_tools(self):
+        for name in ("searchProducts", "getCart", "listStores", "batchSearch",
+                     "findNovaPoshtaBranch", "suggestSubstitutes",
+                     "checkDeliverySlots", "getLoyaltyBalance"):
+            self.assertFalse(is_write_tool(name), name)
+
+    def test_write_tools(self):
+        for name in ("addToCart", "removeFromCart", "updateDelivery",
+                     "applyPromoCode", "redeemBonuses", "setAddress",
+                     "createOrder", "checkout", "clearCart"):
+            self.assertTrue(is_write_tool(name), name)
+
+    def test_unknown_verb_is_conservative(self):
+        # Невідоме перше дієслово -> вважаємо write
+        self.assertTrue(is_write_tool("zpakuvatyKoshyk"))
+
+
 class TestToolConversion(unittest.TestCase):
     def test_converts_schema(self):
         converted = mcp_tools_to_anthropic(TOOLS)
@@ -133,6 +157,45 @@ class TestAgentLoop(unittest.TestCase):
         tool_result = second_call_messages[-1]["content"][0]
         self.assertEqual(tool_result["type"], "tool_result")
         self.assertEqual(tool_result["tool_use_id"], "tu_1")
+
+    def test_write_tool_declined_not_executed(self):
+        mcp = mock.Mock()
+        mcp.list_tools.return_value = TOOLS + [{
+            "name": "addToCart", "description": "Додає товар у кошик",
+            "inputSchema": {"type": "object", "properties": {}},
+        }]
+        first = mock.Mock(stop_reason="tool_use",
+                          content=[tool_use_block("addToCart", {"id": 1})])
+        final = mock.Mock(stop_reason="end_turn", content=[text_block("Ок")])
+        llm = mock.Mock()
+        llm.beta.messages.create.side_effect = [first, final]
+
+        agent = SilpoAgent(mcp_client=mcp, anthropic_client=llm,
+                           confirm_write=lambda name, args: False)
+        agent.run("Додай у кошик")
+
+        mcp.call_tool.assert_not_called()
+        messages = llm.beta.messages.create.call_args.kwargs["messages"]
+        self.assertEqual(messages[-1]["content"][0]["content"], DECLINED_RESULT)
+        self.assertFalse(agent.audit.entries[-1]["allowed"])
+
+    def test_read_only_blocks_write(self):
+        mcp = mock.Mock()
+        mcp.list_tools.return_value = TOOLS
+        first = mock.Mock(stop_reason="tool_use",
+                          content=[tool_use_block("applyPromoCode", {"code": "X"})])
+        final = mock.Mock(stop_reason="end_turn", content=[text_block("Ок")])
+        llm = mock.Mock()
+        llm.beta.messages.create.side_effect = [first, final]
+
+        agent = SilpoAgent(mcp_client=mcp, anthropic_client=llm, read_only=True)
+        agent.run("Застосуй промокод")
+
+        mcp.call_tool.assert_not_called()
+        messages = llm.beta.messages.create.call_args.kwargs["messages"]
+        result = messages[-1]["content"][0]
+        self.assertEqual(result["content"], READ_ONLY_RESULT)
+        self.assertTrue(result["is_error"])
 
     def test_refusal_handled(self):
         mcp = mock.Mock()
