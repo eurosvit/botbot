@@ -155,12 +155,19 @@ class Engine:
             win = res["pnl"] >= 0
             head = "✅ <b>ПРИБУТОК</b>" if win else "❌ <b>ЗБИТОК</b>"
             money = "💰" if win else "💸"
+            try:
+                balance = self.broker.equity()          # баланс рахунку ПІСЛЯ угоди
+            except Exception:
+                balance = None
+            bal_line = (f"💼 Баланс: <b>{balance:.2f}</b> {self.cfg.quote_currency}\n"
+                        if balance is not None else "")
             self.notifier.send(
                 f"{head} · закрито {side.upper()}\n"
                 f"{position['symbol']}\n"
                 f"Ціна виходу: {price:.4f}\n"
                 f"{money} PnL: {res['pnl']:+.2f} ({res['pnl_pct']:+.2f}%)\n"
                 f"Комісія: {res.get('fee', 0.0):.2f}\n"
+                f"{bal_line}"
                 f"Причина: {reason}\nРежим: {self.broker.mode}"
             )
 
